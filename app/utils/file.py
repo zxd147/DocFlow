@@ -1,14 +1,19 @@
+import asyncio
 import base64
 import mimetypes
 import os
+import re
 import shutil
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
-from typing import Union, BinaryIO
+from typing import Union, BinaryIO, Tuple
+from urllib.parse import unquote
 
-from fastapi import HTTPException
+import aiofiles
+import httpx
+from fastapi import UploadFile, HTTPException
 
-from app.models.request_model import FileRequestModel
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -47,47 +52,47 @@ mime_extension_map = {
 # 反向映射：后缀 => MIME
 extension_mime_map = {v: k for k, v in mime_extension_map.items()}
 
-def analyze_path(default_dir, file_path, file_name, file_format):
-    has_ext = bool(os.path.splitext(file_path)[1])
+def get_full_path(default_dir, path, name, extension, add_timestamp=False):
+    has_ext = bool(os.path.splitext(path)[1])
     # 检查路径是否为完整路径
-    if os.path.isabs(file_path):
+    if os.path.isabs(path):
         # 检查是否有文件后缀
-        if has_ext and os.path.exists(os.path.dirname(file_path)):
+        if has_ext and os.path.exists(os.path.dirname(path)):
             # 这是一个完整路径且父目录存在
-            final_path = file_path
-        elif os.path.isdir(file_path):
+            final_path = path
+        elif os.path.isdir(path):
             # 这是一个存在的完整目录
-            final_path = os.path.join(file_path, file_name + file_format)
+            final_path = os.path.join(path, name + extension)
         else:
             # 路径不存在或者不合法
-            logs = f"Invalid file_path provided, {file_path}"
+            logs = f"Invalid path provided, {path}"
             logger.error(logs)
             raise ValueError(logs)
-    elif file_path.find('/') == -1:
+    elif path.find('/') == -1:
         # 不存在路径分隔符
         if has_ext:
             # 这是一个带后缀的文件名
-            final_path = os.path.join(default_dir, file_path)
-        elif file_path == '':
-            final_path = os.path.join(default_dir, file_name + file_format)
+            final_path = os.path.join(default_dir, path)
+        elif path == '':
+            final_path = os.path.join(default_dir, name + extension)
         else:
             # 没有后缀名的文件名
-            final_path = os.path.join(default_dir, file_path + file_format)
+            final_path = os.path.join(default_dir, path + extension)
     else:
-        if '/' in file_path and os.path.isdir(
-                os.path.dirname(file_path) if has_ext else file_path):
+        if '/' in path and os.path.isdir(
+                os.path.dirname(path) if has_ext else path):
             # 不是绝对路径但包含路径分隔符且存在, 这是一个相对目录
-            logs = f"Warning: {file_path}, 相对路径仅供测试, 请使用绝对路径"
+            logs = f"Warning: {path}, 相对路径仅供测试, 请使用绝对路径"
             logger.warning(logs)
             if has_ext:
-                final_path = os.path.abspath(file_path)
+                final_path = os.path.abspath(path)
             else:
-                # file_path = str(os.path.join(file_path, file_name + file_format))
-                file_path = os.path.join(file_path, f"{file_name}{file_format}")
-                final_path = os.path.abspath(file_path)
+                # path = str(os.path.join(path, name + extension))
+                path = os.path.join(path, f"{name}{extension}")
+                final_path = os.path.abspath(path)
         else:
             # 路径不存在或者不合法
-            logs = f"Invalid file_path provided, {file_path}"
+            logs = f"Invalid path provided, {path}"
             logger.error(logs)
             raise ValueError(logs)
     dir_name = os.path.dirname(final_path)
@@ -96,9 +101,8 @@ def analyze_path(default_dir, file_path, file_name, file_format):
     name, ext = os.path.splitext(base_name)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{name}[{timestamp}]{ext}"
-    final_path = os.path.join(dir_name, filename)
+    final_path = os.path.join(dir_name, filename) if add_timestamp else final_path
     return final_path
-
 
 def get_extension_from_mime(content_type: str) -> str:
     extension = mime_extension_map.get(content_type) or mimetypes.guess_extension(content_type, strict=False) or ""
@@ -109,39 +113,192 @@ def get_mime_from_extension(extension: str) -> str:
     mime = extension_mime_map.get(extension.lower()) or mimetypes.guess_type("file" + extension, strict=False)[0] or ""
     return mime
 
+async def async_get_bytes_from_file(file: UploadFile) -> Tuple[bytes, int, str]:
+    contents = await file.read()
+    size = len(contents)
+    extension = get_extension_from_mime(file.content_type or "")
+    return contents, size, extension
+
+def get_bytes_from_file(file: UploadFile) -> Tuple[bytes, int, str]:
+    contents = file.file.read()  # 直接使用 `UploadFile` 的文件对象
+    size = len(contents)
+    extension = get_extension_from_mime(file.content_type or "")
+    return contents, size, extension
+
+def get_file_like_from_file(file: UploadFile) -> Tuple[BinaryIO, int, str]:
+    contents = file.file  # 直接使用 `UploadFile` 的文件对象
+    contents.seek(0, 2)  # 移动到文件末尾
+    source_size = contents.tell()  # 获取当前位置，即文件大小
+    contents.seek(0)  # 将指针重置到文件开头
+    extension = get_extension_from_mime(file.content_type or "")
+    return contents, source_size, extension
+
+async def async_get_bytes_from_path(path: str) -> Tuple[bytes, int]:
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+    async with aiofiles.open(path, "rb") as f:
+        contents = await f.read()
+        size = len(contents)
+    return contents, size
+
+def get_bytes_from_path(path: str) -> Tuple[bytes, int]:
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+    with open(path, "rb") as f:
+        contents = f.read()
+        size = len(contents)
+    return contents, size
+
+async def get_bytes_from_url(url: str) -> Tuple[bytes, int, str]:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, timeout=10.0)
+        response.raise_for_status()
+        contents = response.content  # 直接使用 `httpx.Response` 的内容对象
+        content_type = response.headers.get("content-type", "")
+    size = len(contents)
+    extension = get_extension_from_mime(content_type)
+    return contents, size, extension
+
+def get_bytes_from_base64(base64_str: str) -> Tuple[bytes, int, str]:
+    extension = ''
+    if base64_str.startswith("data:"):
+        # 使用正则表达式提取文件格式
+        match = re.match(r'data:(.*?);base64,(.*)', base64_str)
+        if match:
+            content_type = match.group(1)
+            extension = get_extension_from_mime(content_type)
+            base64_str = match.group(2)
+    base64_data = base64.b64decode(base64_str)
+    size = len(base64_data)
+    return base64_data, size, extension
+
+# def ensure_file_like(obj: Union[bytes, BinaryIO]) -> BinaryIO:
+#     if isinstance(obj, bytes):
+#         return BytesIO(obj)
+#     return obj  # already file-like
+#
+# def ensure_bytes(obj: Union[bytes, BinaryIO]) -> bytes:
+#     if isinstance(obj, bytes):
+#         return obj
+#     return obj.read()
+#
+def to_bytes(obj: Union[str, bytes, BinaryIO], encoding="utf-8") -> bytes:
+    if isinstance(obj, bytes):
+        return obj
+    elif isinstance(obj, str):
+        return obj.encode(encoding)
+    else:
+        try:
+            obj.seek(0)
+        except Exception:
+            pass
+        return obj.read()
+
+def to_bytesio(obj: Union[str, bytes, BinaryIO], encoding="utf-8") -> BinaryIO:
+    if isinstance(obj, bytes):
+        return BytesIO(obj)
+
+    elif isinstance(obj, str):
+        return BytesIO(obj.encode(encoding))
+    else:
+        try:
+            obj.seek(0)
+        except Exception:
+            pass
+        return BytesIO(obj.read())
+
+def to_text(obj: Union[bytes, BinaryIO, str], encoding="utf-8") -> str:
+    if isinstance(obj, bytes):
+        return obj.decode(encoding)
+    elif isinstance(obj, str):
+        return obj
+    else:
+        try:
+            obj.seek(0)
+        except Exception:
+            pass
+        return obj.read().decode(encoding)
+
+async def async_save_contents_to_path(contents: Union[bytes, str, BinaryIO], path: str) -> None:
+    if isinstance(contents, str):
+        # 文本模式写入
+        async with aiofiles.open(path, "w", encoding="utf-8") as f:
+            await f.write(contents)
+    elif isinstance(contents, bytes):
+        # 纯字节模式写入
+        async with aiofiles.open(path, "wb") as f:
+            await f.write(contents)
+    else:
+        # 流式读取并写入
+        try:
+            contents.seek(0)
+        except Exception:
+            pass
+
+        async with aiofiles.open(path, "wb") as f:
+            loop = asyncio.get_event_loop()
+            while True:
+                chunk = await loop.run_in_executor(None, contents.read, 8192)
+                if not chunk:
+                    break
+                await f.write(chunk)
+
 def save_contents_to_path(contents: Union[bytes, BinaryIO], path: str) -> None:
     with open(path, "wb") as f:
         if isinstance(contents, bytes):
             f.write(contents)
         else:
+            # 重置指针到开头
+            try:
+                contents.seek(0)
+            except Exception:
+                pass  # 如果对象不支持 seek，比如 socket，可以跳过
             shutil.copyfileobj(contents, f)  # 用同步的底层文件对象
 
-def local_path_to_url(file_path: str, base_dir: str, base_url: str) -> str:
-    base_dir = Path(base_dir)
-    full_path = Path(file_path).resolve()
-    rel_path = full_path.relative_to(base_dir)
+def local_path_to_url(path: str, base_dir: str, base_url: str) -> str:
+    if not path:
+        return ""
+    base_dir = Path(base_dir).resolve()
+    full_path = Path(path).resolve()
+    try:
+        relative_path = full_path.relative_to(base_dir)
+    except ValueError:
+        raise ValueError(f"Local path {full_path} is not under base directory {base_dir}")
     # full_url = urljoin(base_url, str(rel_path))
-    full_url = f"{base_url.rstrip('/')}/{rel_path.as_posix()}"
+    full_url = f"{base_url.rstrip('/')}/{relative_path.as_posix()}"
     return full_url
 
-def convert_contents_to_base64(contents: Union[bytes, BinaryIO], format) -> str:
-    media_type = get_mime_from_extension(format)
+def url_to_local_path(url: str, base_dir: str, base_url: str) -> str:
+    if not url:
+        return ""
+    if not url.startswith(base_url):
+        raise ValueError(f"URL path {url}does not start with base_url: {base_url}")
+    relative_path = url.rstrip('/')[len(base_url.rstrip('/')):].lstrip("/")
+    relative_path = unquote(relative_path)
+    base_dir = Path(base_dir).resolve()
+    local_path = base_dir / relative_path
+    full_path = str(local_path)
+    return full_path
+
+def convert_contents_to_base64(contents: Union[bytes, BinaryIO], extension) -> str:
+    media_type = get_mime_from_extension(extension)
     data_url = f"data:{media_type};base64"
     base64_code = base64.b64encode(contents).decode('utf-8')
     base64_code = f'{data_url},{base64_code}'
     return base64_code
 
-async def parse_file_request(request) -> FileRequestModel:
-    request_content_type = request.headers.get('content-type', '')
-    if 'multipart/form-data' in request_content_type or 'application/x-www-form-urlencoded' in request_content_type:
-        form_data = await request.form()
-        request_data = FileRequestModel(**form_data)
-    elif "application/json" in request_content_type:
-        json_data = await request.json()
-        request_data = FileRequestModel(**json_data)
-    else:
-        raise HTTPException(status_code=415, detail="Unsupported Content-Type")
-    return request_data
+def get_short_data(data, return_data: bool, return_file: bool) -> Tuple[str, str]:
+    # len('data:audio/wav;base64,'): 22
+    short_data = f"{data[:30]}...{data[-20:]}"
+    full_data = short_data if not return_data or return_file else data
+    return full_data, short_data
 
+def copy_file(src_path: str, dst_path: str) -> None:
+    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+    try:
+        shutil.copyfile(src_path, dst_path)
+    except Exception as e:
+        logger.error(f"文件复制失败: {e}")
+        raise HTTPException(status_code=500, detail="文件复制失败")
 
 

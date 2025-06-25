@@ -1,20 +1,21 @@
-from typing import Dict, Any, List, Optional, Union
+from typing import Optional, Union
 
 from pydantic import BaseModel
 
 
 class FileDataResponse(BaseModel):
+    file_name: str = ""
+    file_format: str = ""
+    file_base64: str = ""
     file_url: str = ""
     file_path: str = ""
-    file_name: str = ""
-    file_base64: str = ""
-    file_format: str = ""
+    file_text: str = ""
 
-class FileResponseModel(BaseModel):
-    uid: str
-    sno: str
-    code: int = 0
-    messages: Optional[str]
+class FileModelResponse(BaseModel):
+    uid: Optional[Union[int, str]] = None
+    sno: Optional[Union[int, str]] = None
+    code: int
+    messages: str
     data: Optional[FileDataResponse] = []
 
 class FileUploadResponse(BaseModel):

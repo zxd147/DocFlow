@@ -10,3 +10,8 @@ psutil==7.0.0
 httpx[http2]==0.28.1
 lark_oapi==1.4.16
 requests==2.32.3
+aiofiles==22.1.0
+mammoth == 1.9.1
+beautifulsoup4 == 4.13.4
+pdf2docx == 0.5.8
+

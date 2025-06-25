@@ -1,5 +1,4 @@
 import os
-from typing import BinaryIO
 
 import mammoth
 from bs4 import BeautifulSoup
@@ -7,28 +6,19 @@ from bs4.element import Tag, NavigableString
 from pdf2docx import Converter
 
 
-def convert_pdf_to_docx(input_path: str = "", input_text: str = "", input_stream: BinaryIO = None,
-                        output_path: str = "", output_text: str = "", output_stream: BinaryIO = None):
-    cv = Converter(pdf_file=input_path, stream=input_stream)
-    cv.convert(output_stream or output_path, start=0, end=None)
+def pdf_to_docx(pdf_path, docx_path):
+    print(f"正在将 {pdf_path} 转换为 Word 文件...")
+    cv = Converter(pdf_path)
+    cv.convert(docx_path, start=0, end=None)
     cv.close()
-    output_stream.seek(0)
-    print(f"Word 文件已保存至 {output_stream}")
-    return output_path, output_text, output_stream
+    print(f"Word 文件已保存至 {docx_path}")
 
-def convert_docx_to_html(input_path: str = "", input_text: str = "", input_stream: BinaryIO = None,
-                        output_path: str = "", output_text: str = "", output_stream: BinaryIO = None):
-    if input_path:
-        print(f"正在将 {input_path} 转换为 HTML...")
-        with open(input_path, "rb") as docx_file:
-            input_stream = docx_file
-    result = mammoth.convert_to_html(input_stream)
-    output_text = result.value
-    output_text = output_text.replace('<table>', '<table border="1">')
-    # 格式化处理
-    output_clean = remove_nested_tables(output_text)
-    output_text = format_html(output_clean)
-    return output_path, output_text, output_stream
+def docx_to_html(docx_path):
+    print(f"正在将 {docx_path} 转换为 HTML...")
+    with open(docx_path, "rb") as docx_file:
+        result = mammoth.convert_to_html(docx_file)
+    html_content = result.value
+    return html_content
 
 # ---------- 第三步：去除嵌套表格 ----------
 def remove_nested_tables(raw_html):
@@ -86,15 +76,14 @@ if __name__ == "__main__":
         print(f"❌ 文件不存在: {input_pdf_path}")
     else:
         # ---------- 第一步：PDF 转 Word ----------
-        convert_pdf_to_docx(input_path=input_pdf_path, output_path=temp_docx_name)
+        pdf_to_docx(input_pdf_path, temp_docx_name)
         # ---------- 第二步：Word 转 HTML ----------
-        html_path, html_text, html_contents = convert_docx_to_html(input_path=temp_docx_name)
-        # html_str = html_str.replace('<table>', '<table border="1">')
-        # # 格式化处理
-        # clean_html = remove_nested_tables(html_str)
-        # # ---------- 第四步：格式化 HTML ----------
-        # formatted_html = format_html(clean_html)
-        formatted_html = html_text
+        html_str = docx_to_html(temp_docx_name)
+        html_str = html_str.replace('<table>', '<table border="1">')
+        # 格式化处理
+        clean_html = remove_nested_tables(html_str)
+        # ---------- 第四步：格式化 HTML ----------
+        formatted_html = format_html(clean_html)
         with open(output_html_path, "w", encoding="utf-8") as html_file:
             html_file.write(formatted_html)
         print(f"HTML 文件已保存至 {output_html_path}")

@@ -89,7 +89,7 @@
     </div>
 
     <script>
-        async function fetchmonitor() {
+        async function fetch_monitor() {
             const response = await fetch('/monitor');
             const data = await response.json();
 
@@ -122,10 +122,10 @@
         }
 
         // Fetch monitor on load
-        window.onload = fetchmonitor;
+        window.onload = fetch_monitor;
 
         // Refresh every 1 seconds
-        setInterval(fetchmonitor, 1000);
+        setInterval(fetch_monitor, 1000);
     </script>
 </body>
 </html>

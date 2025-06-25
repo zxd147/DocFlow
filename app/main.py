@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Path, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.api import api_router
 from app.core.configs.settings import settings
 from app.core.lifespan import lifespan
+from app.dependencies.auth_dependencies import bearer_auth_dependency
 from app.middlewares.log_middleware import log_request_middleware
 from app.utils.status import get_system_status
 
@@ -20,7 +21,7 @@ def create_app() -> FastAPI:
     init_app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])  # 设置CORS
     init_app.middleware("http")(log_request_middleware)
     app.mount("/static/public", StaticFiles(directory="app/static/public"), name="public-static")
-
+    app.mount("/static/temp", StaticFiles(directory="app/static/temp"), name="temp-static")
     # 添加请求日志中间件 - 简化版，不读取请求体
     init_app.include_router(api_router, prefix=settings.api_prefix_v1)  # 注册API路由
     return init_app
@@ -28,12 +29,12 @@ def create_app() -> FastAPI:
 app = create_app()
 
 @app.get("/static/protected/{file_path:path}")
-async def protected_static(file_path: str, _: None = Depends(verify_key)):
-    file_full_path = Path("app/static/protected") / file_path
-    if not file_full_path.exists() or not file_full_path.is_file():
+async def protected_static(file_path: str, _: None = Depends(bearer_auth_dependency)):
+    protected_dir = Path(settings.protected_manager_dir).resolve()
+    file_path = (protected_dir / file_path).resolve()
+    if not str(file_path).startswith(str(protected_dir)) or not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(path=file_full_path)
-
+    return FileResponse(path=file_path)
 
 @app.get("/")
 async def index():
