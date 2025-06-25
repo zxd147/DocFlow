@@ -32,7 +32,7 @@ conversion_map = {
 async def handle_file_operation(request_model, file, mode, convert_type=None) -> Union[JSONResponse, StreamingResponse]:
     try:
         logger.info(f"{mode.capitalize()} file request param: {request_model.model_dump()}.")
-        if request_model.data.is_empty() or not file:
+        if request_model.data.is_empty() and not file:
             raise HTTPException(status_code=400, detail="Missing file information.")
         contents, name, ext, size, info = await get_contents(request_model, mode=mode, file=file)
         logger.info(info)
