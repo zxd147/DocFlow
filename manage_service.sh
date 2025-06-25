@@ -4,14 +4,14 @@
 SERVICE_NAME="DocFlow"
 PID_FILE="/tmp/${SERVICE_NAME}.pid"
 LOG_FILE="output.log"
-PYTHON_PATH="/opt/anaconda3/envs/oa/bin/python"
+PYTHON_PATH="/opt/anaconda3/envs/fl/bin/python"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # 设置模块查找路径为项目根目录
 export PYTHONPATH="$SCRIPT_DIR"
 
 start_service() {
     # 检查是否已有同名进程（即使PID文件丢失）
-    EXISTING_PID=$(pgrep -f "${PYTHON_PATH}.*main.py")
+    EXISTING_PID=$(pgrep -f "${PYTHON_PATH}.*f_main.py")
     if [ -n "$EXISTING_PID" ]; then
         echo "Conflict: Process already running (PID: $EXISTING_PID). Use 'stop' first."
         return 1
@@ -28,7 +28,7 @@ start_service() {
 
     echo "Starting ${SERVICE_NAME}..."
     # 构造要运行的命令字符串
-    SHELL_CMD="nohup $PYTHON_PATH \"$SCRIPT_DIR/app/main.py\" > \"$SCRIPT_DIR/$LOG_FILE\" 2>&1 &"
+    SHELL_CMD="nohup $PYTHON_PATH \"$SCRIPT_DIR/app/f_main.py\" > \"$SCRIPT_DIR/$LOG_FILE\" 2>&1 &"
     echo "$SHELL_CMD"
     eval "$SHELL_CMD"
     echo $! > "$PID_FILE"
