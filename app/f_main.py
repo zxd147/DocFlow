@@ -20,8 +20,8 @@ def create_app() -> FastAPI:
         openapi_url=f"{settings.api_prefix_v1}/openapi.json", docs_url="/docs", redoc_url="/redoc", lifespan=lifespan)
     init_app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])  # 设置CORS
     init_app.middleware("http")(log_request_middleware)
-    app.mount("/static/public", StaticFiles(directory="app/static/public"), name="public-static")
-    app.mount("/static/temp", StaticFiles(directory="app/static/temp"), name="temp-static")
+    init_app.mount("/static/public", StaticFiles(directory="app/static/public"), name="public-static")
+    init_app.mount("/static/temp", StaticFiles(directory="app/static/temp"), name="temp-static")
     # 添加请求日志中间件 - 简化版，不读取请求体
     init_app.include_router(api_router, prefix=settings.api_prefix_v1)  # 注册API路由
     return init_app
@@ -77,4 +77,4 @@ async def monitor_system_status():
 if __name__ == "__main__":
     host = settings.host
     port = settings.port
-    uvicorn.run("app.main:app", host=host, port=port, reload=True)
+    uvicorn.run("app.f_main:app", host=host, port=port, reload=True)
