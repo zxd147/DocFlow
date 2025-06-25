@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 服务管理脚本
-SERVICE_NAME="OpenAPI"
+SERVICE_NAME="DocFlow"
 PID_FILE="/tmp/${SERVICE_NAME}.pid"
 LOG_FILE="output.log"
 PYTHON_PATH="/opt/anaconda3/envs/oa/bin/python"
