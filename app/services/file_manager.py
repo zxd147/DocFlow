@@ -94,7 +94,6 @@ async def parse_file_request(request) -> FileModelRequest:
 
 async def get_contents(request_data, mode, file):
     data = request_data.data
-    source_contents = None
     split_name, split_ext = os.path.splitext(data.file_name or "")
     if data.is_empty() and not file:
             raise HTTPException(status_code=400, detail=f"Missing file information, data.is_empty: {request_data.data.is_empty()} and not file: {not file}.")
