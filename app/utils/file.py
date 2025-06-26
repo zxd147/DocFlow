@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Union, BinaryIO, Tuple
+from typing import Union, BinaryIO, Tuple, Literal
 from urllib.parse import unquote
 
 import aiofiles
@@ -49,10 +49,22 @@ mime_extension_map = {
     "application/x-rar-compressed": ".rar",
     # 还可以继续补充
 }
+timestamp_format_map = {
+    "null": None,
+    "full": "%Y%m%d_%H%M%S",
+    "date": "%Y%m%d",
+    "time": "%H%M%S",
+    "year": "%Y",
+    "month": "%m",
+    "day": "%d",
+    "hour": "%H",
+    "minute": "%M",
+    "second": "%S",
+}
 # 反向映射：后缀 => MIME
 extension_mime_map = {v: k for k, v in mime_extension_map.items()}
 
-def get_full_path(default_dir, path, name, extension, add_timestamp=False):
+def get_full_path(default_dir, path, name, extension, st_fmt="null"):
     has_ext = bool(os.path.splitext(path)[1])
     # 检查路径是否为完整路径
     if os.path.isabs(path):
@@ -95,14 +107,19 @@ def get_full_path(default_dir, path, name, extension, add_timestamp=False):
             logs = f"Invalid path provided, {path}"
             logger.error(logs)
             raise ValueError(logs)
-    dir_name = os.path.dirname(final_path)
-    base_name = os.path.basename(final_path)
-    os.makedirs(dir_name, exist_ok=True)
-    name, ext = os.path.splitext(base_name)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{name}[{timestamp}]{ext}"
-    final_path = os.path.join(dir_name, filename) if add_timestamp else final_path
+    os.makedirs(os.path.dirname(final_path), exist_ok=True)
+    final_path = add_timestamp_to_filepath(final_path, fmt=st_fmt)
     return final_path
+
+def add_timestamp_to_filepath(path: str, fmt: str = "null") -> str:
+    fmt_str = timestamp_format_map.get(fmt, "%Y%m%d_%H%M%S")
+    if not fmt_str:
+        return path
+    timestamp_str = datetime.now().strftime(fmt)
+    p = Path(path)
+    new_name = f"{p.stem}[{timestamp_str}]{p.suffix}"
+    new_path = str(p.with_name(new_name))
+    return new_path
 
 def get_extension_from_mime(content_type: str) -> str:
     extension = mime_extension_map.get(content_type) or mimetypes.guess_extension(content_type, strict=False) or ""

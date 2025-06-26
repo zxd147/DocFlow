@@ -17,8 +17,10 @@ from app.models.request_model import FileModelRequest
 from app.models.response_model import FileModelResponse, FileDataResponse
 from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_html
 from app.utils.exception import file_exception
-from app.utils.file import get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64, convert_contents_to_base64, \
-    to_bytesio, to_bytes, to_text, copy_file, get_full_path, get_short_data, async_save_contents_to_path, local_path_to_url
+from app.utils.file import get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64, \
+    convert_contents_to_base64, \
+    to_bytesio, to_bytes, to_text, copy_file, get_full_path, get_short_data, async_save_contents_to_path, \
+    local_path_to_url, add_timestamp_to_filepath
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -133,7 +135,8 @@ async def get_contents(request_data, mode, file):
     return source_contents, source_name, source_format, source_size, source_info
 
 async def save_file_and_get_url(file_path, directory, contents, do_save, name, ext):
-    save_path = get_full_path(directory, file_path, name, ext, add_timestamp=do_save)
+    st_fmt = "full" if do_save else "null"
+    save_path = get_full_path(directory, file_path, name, ext, st_fmt)
     save_url = local_path_to_url(save_path, settings.static_root, settings.static_url) \
         if save_path and save_path.startswith(settings.static_root) else ''
     await async_save_contents_to_path(contents, save_path) if do_save else None
@@ -144,8 +147,9 @@ async def get_convert_path_and_url(file_path, directory, contents, convert_type,
     if os.path.splitext(file_path)[1] != f".{src_ext}":
         raise ValueError(f"文件{file_path}扩展名与转换类型不匹配: {os.path.splitext(file_path)[1]} != .{src_ext}")
     # 用新的扩展名替换原来的
-    file_path = str(Path(file_path).with_suffix(f".{dst_ext}"))
-    convert_path = get_full_path(directory, file_path, name, ext, add_timestamp=True)
+    convert_path = str(Path(file_path).with_suffix(f".{dst_ext}"))
+
+    convert_path = add_timestamp_to_filepath(convert_path, fmt='minute')
     convert_name = os.path.basename(convert_path)
     convert_ext = os.path.splitext(convert_name)[1]
     convert_url = local_path_to_url(convert_path, settings.static_root, settings.static_url) \
@@ -169,6 +173,7 @@ def build_response(file_contents, results, name, ext, return_file, media_type="a
         filename = f"{name}{ext}"
         headers = {"X-File-Metadata": metadata_b64, "Content-Disposition": f"attachment; filename='{filename}'"}
         return StreamingResponse(file_contents, media_type=media_type, headers=headers)
+        # return StreamingResponse(file_contents, media_type=media_type)
     else:
         return JSONResponse(status_code=200, content=results.model_dump())
 
