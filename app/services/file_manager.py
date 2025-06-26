@@ -17,8 +17,7 @@ from app.models.response_model import FileDataResponse, FileModelResponse
 from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_html
 from app.utils.exception import file_exception
 from app.utils.file import get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64, \
-    convert_contents_to_base64, to_text, copy_file, to_bytesio
-from app.utils.file import get_full_path, async_save_contents_to_path, local_path_to_url, get_short_data
+    convert_contents_to_base64, to_text, copy_file, to_bytesio, get_full_path, async_save_contents_to_path, local_path_to_url, get_short_data
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -73,6 +72,7 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
         return build_response(contents, results, request_model.return_file)
     except Exception as e:
         code, status, msg = file_exception(e)
+        logger.error(msg)
         return JSONResponse(
             status_code=status,
             content=FileModelResponse(code=code, messages=msg).model_dump()

@@ -1,8 +1,6 @@
 from typing import Optional, Literal
 
-from fastapi import APIRouter
-from fastapi import File, UploadFile
-from fastapi import Request
+from fastapi import APIRouter, Request, File, UploadFile
 
 from app.models.request_model import FileModelRequest
 from app.services.file_manager import parse_file_request, handle_file_operation

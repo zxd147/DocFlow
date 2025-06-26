@@ -1,9 +1,7 @@
 import time
-from typing import Any
-from typing import Optional, Union, Dict
+from typing import Optional, Union, Dict, Any
 
-from pydantic import BaseModel
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
 class FileDataRequest(BaseModel):
@@ -24,7 +22,7 @@ class FileModelRequest(BaseModel):
     return_text: bool = False
     return_file: bool = False
     extra: Dict[str, Any] = ""
-    data: Optional[FileDataRequest] = []
+    data: Optional[FileDataRequest] = Field(default_factory=FileDataRequest)
 
 class FileUploadRequest(BaseModel):
     sno: Union[int, str] = Field(default_factory=lambda: int(time.time() * 100))
