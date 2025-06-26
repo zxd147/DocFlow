@@ -2,6 +2,7 @@ from typing import Optional, Union
 
 from pydantic import BaseModel, Field
 
+
 class FileDataResponse(BaseModel):
     file_name: str = ""
     file_format: str = ""

@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Union, BinaryIO, Tuple, Literal
+from typing import Union, BinaryIO, Tuple
 from urllib.parse import unquote
 
 import aiofiles
@@ -115,7 +115,7 @@ def add_timestamp_to_filepath(path: str, fmt: str = "null") -> str:
     fmt_str = timestamp_format_map.get(fmt, "%Y%m%d_%H%M%S")
     if not fmt_str:
         return path
-    timestamp_str = datetime.now().strftime(fmt)
+    timestamp_str = datetime.now().strftime(fmt_str)
     p = Path(path)
     new_name = f"{p.stem}[{timestamp_str}]{p.suffix}"
     new_path = str(p.with_name(new_name))

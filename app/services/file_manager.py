@@ -2,8 +2,8 @@ import base64
 import copy
 import json
 import os
-import uuid
 import traceback
+import uuid
 from io import BytesIO
 from pathlib import Path
 from typing import Union
@@ -19,7 +19,7 @@ from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_html
 from app.utils.exception import file_exception
 from app.utils.file import get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64, \
     convert_contents_to_base64, \
-    to_bytesio, to_bytes, to_text, copy_file, get_full_path, get_short_data, async_save_contents_to_path, \
+    to_bytesio, to_text, copy_file, get_full_path, get_short_data, async_save_contents_to_path, \
     local_path_to_url, add_timestamp_to_filepath
 from app.utils.logger import get_logger
 
@@ -47,7 +47,7 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
             contents = to_bytesio(contents)
             convert_path, convert_text, convert_contents = await conversion_map[convert_type](input_stream=contents, output_stream=stream)
             text_data = to_text(convert_text) if request_model.return_text else ''
-            url, path, name, ext = await get_convert_path_and_url(save_path, settings.protected_manager_dir, contents, convert_type, name, ext)
+            url, path, name, ext = await get_convert_path_and_url(save_path, contents, convert_type)
             return_url, return_path, contents = url, path, convert_contents
         elif mode == "download":
             return_url = request_model.data.file_url
@@ -65,7 +65,8 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
             text_data = to_text(contents) if request_model.return_text else ''
         code = 0
         messages = f"File {mode}ed successfully. {info}"
-        contents = to_bytes(contents)
+        # from app.utils.file import to_bytes
+        # contents = to_bytes(contents)
         base64_data = convert_contents_to_base64(contents, ext)
         full_base64, short_base64 = get_short_data(base64_data, request_model.return_base64, request_model.return_file)
         full_text, short_text = get_short_data(text_data, request_model.return_text, request_model.return_file)
@@ -142,7 +143,7 @@ async def save_file_and_get_url(file_path, directory, contents, do_save, name, e
     await async_save_contents_to_path(contents, save_path) if do_save else None
     return save_url, save_path
 
-async def get_convert_path_and_url(file_path, directory, contents, convert_type, name, ext):
+async def get_convert_path_and_url(file_path, contents, convert_type):
     src_ext, dst_ext = convert_type.split("2", 1)
     if os.path.splitext(file_path)[1] != f".{src_ext}":
         raise ValueError(f"文件{file_path}扩展名与转换类型不匹配: {os.path.splitext(file_path)[1]} != .{src_ext}")
@@ -150,8 +151,7 @@ async def get_convert_path_and_url(file_path, directory, contents, convert_type,
     convert_path = str(Path(file_path).with_suffix(f".{dst_ext}"))
 
     convert_path = add_timestamp_to_filepath(convert_path, fmt='minute')
-    convert_name = os.path.basename(convert_path)
-    convert_ext = os.path.splitext(convert_name)[1]
+    convert_name, convert_ext = os.path.splitext(os.path.basename(convert_path))
     convert_url = local_path_to_url(convert_path, settings.static_root, settings.static_url) \
         if convert_path and convert_path.startswith(settings.static_root) else ''
     await async_save_contents_to_path(contents, convert_path)
@@ -171,7 +171,8 @@ def build_response(file_contents, results, name, ext, return_file, media_type="a
         metadata_json = json.dumps(results.model_dump(), ensure_ascii=False)
         metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
         filename = f"{name}{ext}"
-        headers = {"X-File-Metadata": metadata_b64, "Content-Disposition": f"attachment; filename='{filename}'"}
+        headers = {"X-File-Metadata": metadata_b64, "Content-Disposition": f'attachment; filename="{filename}"',}
+        file_contents = to_bytesio(file_contents)
         return StreamingResponse(file_contents, media_type=media_type, headers=headers)
         # return StreamingResponse(file_contents, media_type=media_type)
     else:
