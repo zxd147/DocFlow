@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import uuid
+import traceback
 from io import BytesIO
 from pathlib import Path
 from typing import Union
@@ -31,8 +32,6 @@ conversion_map = {
 async def handle_file_operation(request_model, file, mode, convert_type=None) -> Union[JSONResponse, StreamingResponse]:
     try:
         logger.info(f"{mode.capitalize()} file request param: {request_model.model_dump()}.")
-        if request_model.data.is_empty() and not file:
-            raise HTTPException(status_code=400, detail="Missing file information.")
         contents, name, ext, size, info = await get_contents(request_model, mode=mode, file=file)
         logger.info(info)
         if not contents or not info:
@@ -72,6 +71,7 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
         return build_response(contents, results, request_model.return_file)
     except Exception as e:
         code, status, msg = file_exception(e)
+        logger.error(traceback.format_exc())
         logger.error(msg)
         return JSONResponse(
             status_code=status,
@@ -91,14 +91,14 @@ async def parse_file_request(request) -> FileModelRequest:
     return request_data
 
 async def get_contents(request_data, mode, file):
-    data = request_data
+    data = request_data.data
     source_contents = None
     split_name, split_ext = os.path.splitext(data.file_name or "")
-    if data.is_empty() or not file:
-        raise HTTPException(status_code=400, detail="Missing file information: no file_url, file_path, file_name, or uploaded file provided.")
+    if data.is_empty() and not file:
+            raise HTTPException(status_code=400, detail=f"Missing file information, data.is_empty: {request_model.data.is_empty()} and not file: {not file}.")
     if file and mode != "download":
         source_name = split_name or file.filename or uuid.uuid4().hex[:8]
-        source_contents, source_size, file_extension = get_bytes_from_file(file.file)
+        source_contents, source_size, file_extension = get_bytes_from_file(file)
         source_format = next(iter([data.file_format, split_ext, file_extension, ".bin"]))
         source_info = f"Get File mode: file, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
     elif data.file_url:
@@ -106,12 +106,12 @@ async def get_contents(request_data, mode, file):
         url_path = unquote(parsed_url.path)
         url_split_name, url_split_ext = os.path.splitext(os.path.basename(url_path))
         source_name = split_name or url_split_name or uuid.uuid4().hex[:8]
-        file_content, source_size, file_extension = await get_bytes_from_url(data.file_url)
+        source_contents, source_size, file_extension = await get_bytes_from_url(data.file_url)
         source_format = next(iter([data.file_format, split_ext, url_split_ext, file_extension, ".bin"]))
         source_info = f"Get File mode: url, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
     elif data.file_base64 and mode != "download":
         source_name = split_name or uuid.uuid4().hex[:8]
-        source_base64, source_size, file_extension = get_bytes_from_base64(data.file_base64)
+        source_contents, source_size, file_extension = get_bytes_from_base64(data.file_base64)
         source_format = next(iter([data.file_format, split_ext, file_extension, ".bin"]))
         source_info = f"Get File mode: base64, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
     elif data.file_path and mode != "upload":

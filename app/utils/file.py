@@ -168,9 +168,9 @@ def get_bytes_from_base64(base64_str: str) -> Tuple[bytes, int, str]:
             content_type = match.group(1)
             extension = get_extension_from_mime(content_type)
             base64_str = match.group(2)
-    base64_data = base64.b64decode(base64_str)
+    contents = base64.b64decode(base64_str)
     size = len(base64_data)
-    return base64_data, size, extension
+    return contents, size, extension
 
 # def ensure_file_like(obj: Union[bytes, BinaryIO]) -> BinaryIO:
 #     if isinstance(obj, bytes):
