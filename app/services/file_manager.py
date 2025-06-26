@@ -18,7 +18,7 @@ from app.models.response_model import FileDataResponse, FileModelResponse
 from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_html
 from app.utils.exception import file_exception
 from app.utils.file import get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64, \
-    convert_contents_to_base64, to_text, copy_file, to_bytesio, get_full_path, async_save_contents_to_path, local_path_to_url, get_short_data
+    convert_contents_to_base64, to_bytesio, to_bytes, to_text, copy_file, get_full_path, async_save_contents_to_path, local_path_to_url, get_short_data
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -44,6 +44,7 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
             stream = BytesIO()
             contents = to_bytesio(contents)
             convert_path, convert_text, convert_contents = await conversion_map[convert_type](input_stream=contents, output_stream=stream)
+            contents = convert_contents
             text_data = to_text(convert_text) if request_model.return_text else ''
             return_url, return_path = await get_convert_path_and_url(save_path, settings.protected_manager_dir, contents, convert_type, name, ext)
         elif mode == "download":
@@ -62,6 +63,7 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
             text_data = to_text(contents) if request_model.return_text else ''
         code = 0
         messages = f"File {mode}ed successfully. {info}"
+        contents = to_bytes(contents)
         base64_data = convert_contents_to_base64(contents, ext)
         full_base64, short_base64 = get_short_data(base64_data, request_model.return_base64, request_model.return_file)
         full_text, short_text = get_short_data(text_data, request_model.return_text, request_model.return_file)
