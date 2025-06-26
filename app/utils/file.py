@@ -231,41 +231,52 @@ def to_text(obj: Union[bytes, BinaryIO, str], encoding="utf-8") -> str:
     else:
         raise TypeError(f"Unsupported input type: {type(obj)} for to_text")
 
-async def async_save_contents_to_path(contents: Union[bytes, str, BinaryIO], path: str) -> None:
-    if isinstance(contents, str):
-        # 文本模式写入
-        async with aiofiles.open(path, "w", encoding="utf-8") as f:
+async def async_save_contents_to_path(contents: Union[BinaryIO, bytes, str], path: str, encoding="utf-8") -> None:
+    loop = asyncio.get_event_loop()
+    async with aiofiles.open(path, "wb") as f:
+        if isinstance(contents, BytesIO):
+            await f.write(contents.getvalue())
+        elif isinstance(contents, str):
+            # 文本模式转换为bytes写入
+            await f.write(contents.encode(encoding))
+        elif isinstance(contents, bytes):
+            # 纯字节模式写入
             await f.write(contents)
-    elif isinstance(contents, bytes):
-        # 纯字节模式写入
-        async with aiofiles.open(path, "wb") as f:
-            await f.write(contents)
-    else:
-        # 流式读取并写入
-        try:
-            contents.seek(0)
-        except Exception:
-            pass
-
-        async with aiofiles.open(path, "wb") as f:
-            loop = asyncio.get_event_loop()
+        elif hasattr(contents, "read") and callable(contents.read):
+            # 流式读取并写入
+            try:
+                contents.seek(0)
+            except Exception:
+                pass
             while True:
                 chunk = await loop.run_in_executor(None, contents.read, 8192)
                 if not chunk:
                     break
                 await f.write(chunk)
-
-def save_contents_to_path(contents: Union[bytes, BinaryIO], path: str) -> None:
-    with open(path, "wb") as f:
-        if isinstance(contents, bytes):
-            f.write(contents)
         else:
+            raise TypeError(f"Unsupported contents type: {type(contents)}. Must be str, bytes, or BinaryIO.")
+    logger.info(f"Saved contents to {path} successfully.")
+    return
+
+def save_contents_to_path(contents: Union[BinaryIO, bytes, str], path: str, encoding="utf-8") -> None:
+    with open(path, "wb") as f:
+        if isinstance(contents, BytesIO):
+            f.write(contents.getvalue())
+        elif isinstance(contents, bytes):
+            f.write(contents)
+        elif isinstance(contents, str):
+            f.write(contents.encode(encoding))
+        elif hasattr(contents, "read") and callable(contents.read):
             # 重置指针到开头
             try:
                 contents.seek(0)
             except Exception:
                 pass  # 如果对象不支持 seek，比如 socket，可以跳过
-            shutil.copyfileobj(contents, f)  # 用同步的底层文件对象
+            shutil.copyfileobj(contents, f, length=8192)  # 用同步的底层文件对象
+        else:
+            raise TypeError(f"Unsupported contents type: {type(contents)}. Must be str, bytes, or BinaryIO.")
+    logger.info(f"Saved contents to {path} successfully.")
+    return
 
 def local_path_to_url(path: str, base_dir: str, base_url: str) -> str:
     if not path:

@@ -21,7 +21,7 @@ class FileModelRequest(BaseModel):
     return_base64: bool = False
     return_text: bool = False
     return_file: bool = False
-    extra: Dict[str, Any] = ""
+    extra: Dict[str, Any] = Field(default_factory=dict)
     data: Optional[FileDataRequest] = Field(default_factory=FileDataRequest)
 
 class FileUploadRequest(BaseModel):

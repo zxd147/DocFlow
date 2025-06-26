@@ -70,7 +70,7 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
         results, results_log = build_results(request_model, code, messages, name, ext, return_path, return_url,
                                              full_base64, short_base64, full_text, short_text)
         logger.info(f"{mode.capitalize()} file response param: {results_log.model_dump()}.")
-        return build_response(contents, results, nema, ext, request_model.return_file)
+        return build_response(contents, results, name, ext, request_model.return_file)
     except Exception as e:
         code, status, msg = file_exception(e)
         logger.error(traceback.format_exc())
@@ -98,9 +98,10 @@ async def get_contents(request_data, mode, file):
     if data.is_empty() and not file:
             raise HTTPException(status_code=400, detail=f"Missing file information, data.is_empty: {request_data.data.is_empty()} and not file: {not file}.")
     if file and mode != "download":
-        source_name = split_name or file.filename or uuid.uuid4().hex[:8]
+        file_split_name, file_split_ext = os.path.splitext(file.filename or "")
+        source_name = split_name or file_split_name or file.filename or uuid.uuid4().hex[:8]
         source_contents, source_size, file_extension = get_bytes_from_file(file)
-        source_format = next(iter([data.file_format, split_ext, file_extension, ".bin"]))
+        source_format = data.file_format or split_ext or file_split_ext or file_extension or ".bin"
         source_info = f"Get File mode: file, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
     elif data.file_url:
         parsed_url = urlparse(data.file_url)
@@ -108,22 +109,22 @@ async def get_contents(request_data, mode, file):
         url_split_name, url_split_ext = os.path.splitext(os.path.basename(url_path))
         source_name = split_name or url_split_name or uuid.uuid4().hex[:8]
         source_contents, source_size, file_extension = await get_bytes_from_url(data.file_url)
-        source_format = next(iter([data.file_format, split_ext, url_split_ext, file_extension, ".bin"]))
+        source_format = data.file_format or split_ext or url_split_ext or file_extension or ".bin"
         source_info = f"Get File mode: url, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
     elif data.file_base64 and mode != "download":
         source_name = split_name or uuid.uuid4().hex[:8]
         source_contents, source_size, file_extension = get_bytes_from_base64(data.file_base64)
-        source_format = next(iter([data.file_format, split_ext, file_extension, ".bin"]))
+        source_format = data.file_format or split_ext or file_extension or ".bin"
         source_info = f"Get File mode: base64, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
     elif data.file_path and mode != "upload":
         path_split_name, path_split_ext = os.path.splitext(os.path.basename(data.file_path))
         source_name = split_name or path_split_name or uuid.uuid4().hex[:8]
-        source_format = next(iter([data.file_format, split_ext, path_split_ext, ".bin"]))
+        source_format = data.file_format or split_ext or  path_split_ext or ".bin"
         source_contents, source_size = await async_get_bytes_from_path(data.file_path)
         source_info = f"Get file mode: path, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
     elif data.file_name and mode != "upload":
         source_name = split_name or uuid.uuid4().hex[:8]
-        source_format = next(iter([data.file_format, split_ext, ""]))
+        source_format = data.file_format or split_ext or ""
         file_path = os.path.join(settings.temp_manager_dir, f"{source_name}{source_format}")
         source_contents, source_size = await async_get_bytes_from_path(file_path)
         source_info = f"Get File mode: name, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
@@ -162,10 +163,10 @@ def build_results(request, code, messages, name, ext, path, url, full_base64, sh
     return results, results_log
 
 def build_response(file_contents, results, name, ext, return_file, media_type="application/octet-stream"):
-    if return_file and file_contents:
+    if file_contents and return_file:
         metadata_json = json.dumps(results.model_dump(), ensure_ascii=False)
         metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
-        filename = f"{source_name}{source_format}"
+        filename = f"{name}{ext}"
         headers = {"X-File-Metadata": metadata_b64, "Content-Disposition": f"attachment; filename='{filename}'"}
         return StreamingResponse(file_contents, media_type=media_type, headers=headers)
     else:
