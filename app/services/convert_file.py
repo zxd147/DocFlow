@@ -7,7 +7,7 @@ from bs4.element import Tag, NavigableString
 from pdf2docx import Converter
 
 
-def convert_pdf_to_docx(input_path: str = "", input_text: str = "", input_stream: BinaryIO = None,
+async def convert_pdf_to_docx(input_path: str = "", input_text: str = "", input_stream: BinaryIO = None,
                         output_path: str = "", output_text: str = "", output_stream: BinaryIO = None):
     cv = Converter(pdf_file=input_path, stream=input_stream)
     cv.convert(output_stream or output_path, start=0, end=None)
@@ -16,9 +16,9 @@ def convert_pdf_to_docx(input_path: str = "", input_text: str = "", input_stream
     print(f"Word 文件已保存至 {output_stream}")
     return output_path, output_text, output_stream
 
-def convert_docx_to_html(input_path: str = "", input_text: str = "", input_stream: BinaryIO = None,
+async def convert_docx_to_html(input_path: str = "", input_text: str = "", input_stream: BinaryIO = None,
                         output_path: str = "", output_text: str = "", output_stream: BinaryIO = None):
-    if input_path:
+    if input_path and os.path.exists(input_path):
         print(f"正在将 {input_path} 转换为 HTML...")
         with open(input_path, "rb") as docx_file:
             input_stream = docx_file
@@ -74,6 +74,7 @@ def format_html(raw_html):
     # 拼接并保存
     final_html = "\n".join(lines)
     return final_html
+
 
 # ---------- 示例调用 ----------
 if __name__ == "__main__":

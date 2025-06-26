@@ -182,42 +182,54 @@ def get_bytes_from_base64(base64_str: str) -> Tuple[bytes, int, str]:
 #         return obj
 #     return obj.read()
 #
-def to_bytes(obj: Union[str, bytes, BinaryIO], encoding="utf-8") -> bytes:
-    if isinstance(obj, bytes):
+
+def to_bytesio(obj: Union[str, bytes, BinaryIO], encoding="utf-8") -> BytesIO:
+    if isinstance(obj, BytesIO):
         return obj
-    elif isinstance(obj, str):
-        return obj.encode(encoding)
-    else:
-        try:
-            obj.seek(0)
-        except Exception:
-            pass
-        return obj.read()
-
-def to_bytesio(obj: Union[str, bytes, BinaryIO], encoding="utf-8") -> BinaryIO:
-    if isinstance(obj, bytes):
+    elif isinstance(obj, bytes):
         return BytesIO(obj)
-
     elif isinstance(obj, str):
         return BytesIO(obj.encode(encoding))
-    else:
+    elif hasattr(obj, "read") and callable(obj.read):
         try:
             obj.seek(0)
         except Exception:
             pass
         return BytesIO(obj.read())
+    else:
+        raise TypeError(f"Unsupported type: {type(obj)} for to_bytesio")
+
+def to_bytes(obj: Union[str, bytes, BinaryIO], encoding="utf-8") -> bytes:
+    if isinstance(obj, BytesIO):
+        return obj.getvalue()  # 更保险
+    elif isinstance(obj, bytes):
+        return obj
+    elif isinstance(obj, str):
+        return obj.encode(encoding)
+    elif hasattr(obj, "read") and callable(obj.read):
+        try:
+            obj.seek(0)
+        except Exception:
+            pass
+        return obj.read()
+    else:
+        raise TypeError("Unsupported input type: {type(obj)} for to_bytes")
 
 def to_text(obj: Union[bytes, BinaryIO, str], encoding="utf-8") -> str:
-    if isinstance(obj, bytes):
+    if isinstance(obj, BytesIO):
+        return obj.getvalue().decode(encoding)
+    elif isinstance(obj, bytes):
         return obj.decode(encoding)
     elif isinstance(obj, str):
         return obj
-    else:
+    elif hasattr(obj, "read") and callable(obj.read):
         try:
             obj.seek(0)
         except Exception:
             pass
         return obj.read().decode(encoding)
+    else:
+        raise TypeError(f"Unsupported input type: {type(obj)} for to_text")
 
 async def async_save_contents_to_path(contents: Union[bytes, str, BinaryIO], path: str) -> None:
     if isinstance(contents, str):
@@ -281,6 +293,11 @@ def url_to_local_path(url: str, base_dir: str, base_url: str) -> str:
     return full_path
 
 def convert_contents_to_base64(contents: Union[bytes, BinaryIO], extension) -> str:
+    if isinstance(contents, BytesIO):
+        contents = contents.getvalue()
+    elif hasattr(contents, "read") and callable(contents.read):
+        contents.seek(0)
+        contents = contents.read()
     media_type = get_mime_from_extension(extension)
     data_url = f"data:{media_type};base64"
     base64_code = base64.b64encode(contents).decode('utf-8')

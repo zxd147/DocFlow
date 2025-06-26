@@ -45,7 +45,7 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
             contents = to_bytesio(contents)
             convert_path, convert_text, convert_contents = await conversion_map[convert_type](input_stream=contents, output_stream=stream)
             text_data = to_text(convert_text) if request_model.return_text else ''
-            return_url, return_path = get_convert_path_and_url(save_path, settings.protected_manager_dir, contents, convert_type, name, ext)
+            return_url, return_path = await get_convert_path_and_url(save_path, settings.protected_manager_dir, contents, convert_type, name, ext)
         elif mode == "download":
             return_url = request_model.data.file_url
             return_path = request_model.data.file_payh
@@ -95,7 +95,7 @@ async def get_contents(request_data, mode, file):
     source_contents = None
     split_name, split_ext = os.path.splitext(data.file_name or "")
     if data.is_empty() and not file:
-            raise HTTPException(status_code=400, detail=f"Missing file information, data.is_empty: {request_model.data.is_empty()} and not file: {not file}.")
+            raise HTTPException(status_code=400, detail=f"Missing file information, data.is_empty: {request_data.data.is_empty()} and not file: {not file}.")
     if file and mode != "download":
         source_name = split_name or file.filename or uuid.uuid4().hex[:8]
         source_contents, source_size, file_extension = get_bytes_from_file(file)

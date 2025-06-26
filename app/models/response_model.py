@@ -1,7 +1,6 @@
 from typing import Optional, Union
 
-from pydantic import BaseModel
-
+from pydantic import BaseModel, Field
 
 class FileDataResponse(BaseModel):
     file_name: str = ""
@@ -16,7 +15,7 @@ class FileModelResponse(BaseModel):
     sno: Optional[Union[int, str]] = None
     code: int
     messages: str
-    data: Optional[FileDataResponse] = []
+    data: Optional[FileDataResponse] = Field(default_factory=FileDataResponse)
 
 class FileUploadResponse(BaseModel):
     uid: str
