@@ -20,7 +20,7 @@ from app.utils.exception import file_exception
 from app.utils.file import get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64, \
     convert_contents_to_base64, \
     to_bytesio, to_text, copy_file, get_full_path, get_short_data, async_save_contents_to_path, \
-    local_path_to_url, add_timestamp_to_filepath
+    local_path_to_url, add_timestamp_to_filepath, get_mime_from_extension
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -36,19 +36,18 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
         logger.info(f"{mode.capitalize()} file request param: {request_model.model_dump()}.")
         contents, name, ext, size, info = await get_contents(request_model, mode=mode, file=file)
         logger.info(info)
+        text_data = ''
         if not contents or not info:
             raise ValueError("No valid file content found.")
         if mode == "upload" or mode == "extract":
             return_url, return_path = await save_file_and_get_url(request_model.data.file_path, settings.protected_manager_dir, contents, request_model.do_save, name, ext)
-            text_data = to_text(contents) if request_model.return_text else ''
         elif mode == "convert":
             _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, contents, request_model.do_save, name, ext)
             stream = BytesIO()
             contents = to_bytesio(contents)
             convert_path, convert_text, convert_contents = await conversion_map[convert_type](input_stream=contents, output_stream=stream)
-            text_data = to_text(convert_text) if request_model.return_text else ''
-            url, path, name, ext = await get_convert_path_and_url(save_path, contents, convert_type)
-            return_url, return_path, contents = url, path, convert_contents
+            url, path, name, ext = await get_convert_path_and_url(save_path, convert_contents, convert_type)
+            return_url, return_path, contents, text_data = url, path, convert_contents, convert_text
         elif mode == "download":
             return_url = request_model.data.file_url
             return_path = request_model.data.file_payh
@@ -58,15 +57,15 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
             elif return_path and return_path.startswith(settings.public_manager_dir):
                 return_path = return_path.replace(settings.protected_manager_dir, settings.public_manager_dir)
                 copy_file(return_path, return_path)
-            text_data = to_text(contents) if request_model.return_text else ''
         else:
             return_url = request_model.data.file_url
             return_path = request_model.data.file_path
-            text_data = to_text(contents) if request_model.return_text else ''
         code = 0
         messages = f"File {mode}ed successfully. {info}"
         # from app.utils.file import to_bytes
         # contents = to_bytes(contents)
+        text = to_text(contents) if request_model.return_text and ext.lower() in [".txt", ".csv", ".json", ".xml", ".html", ".md"] else ''
+        text_data = text_data or text
         base64_data = convert_contents_to_base64(contents, ext)
         full_base64, short_base64 = get_short_data(base64_data, request_model.return_base64, request_model.return_file)
         full_text, short_text = get_short_data(text_data, request_model.return_text, request_model.return_file)
@@ -166,15 +165,16 @@ def build_results(request, code, messages, name, ext, path, url, full_base64, sh
     results_log.data.file_text = short_text
     return results, results_log
 
-def build_response(file_contents, results, name, ext, return_file, media_type="application/octet-stream"):
+def build_response(file_contents, results, name, ext, return_file):
     if file_contents and return_file:
         metadata_json = json.dumps(results.model_dump(), ensure_ascii=False)
         metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
         filename = f"{name}{ext}"
-        headers = {"X-File-Metadata": metadata_b64, "Content-Disposition": f'attachment; filename="{filename}"',}
-        file_contents = to_bytesio(file_contents)
+        media_type = get_mime_from_extension(ext) or "application/octet-stream"
+        headers = {"X-File-Metadata": metadata_json, "Content-Disposition": f'attachment; filename="{filename}"',}
+        # file_contents = to_bytesio(file_contents)
+        file_contents.seek(0)
         return StreamingResponse(file_contents, media_type=media_type, headers=headers)
-        # return StreamingResponse(file_contents, media_type=media_type)
     else:
         return JSONResponse(status_code=200, content=results.model_dump())
 

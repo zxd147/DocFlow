@@ -202,6 +202,7 @@ def get_bytes_from_base64(base64_str: str) -> Tuple[bytes, int, str]:
 
 def to_bytesio(obj: Union[str, bytes, BinaryIO], encoding="utf-8") -> BytesIO:
     if isinstance(obj, BytesIO):
+        obj.seek(0)
         return obj
     elif isinstance(obj, bytes):
         return BytesIO(obj)
@@ -324,7 +325,10 @@ def convert_contents_to_base64(contents: Union[bytes, BinaryIO], extension) -> s
     if isinstance(contents, BytesIO):
         contents = contents.getvalue()
     elif hasattr(contents, "read") and callable(contents.read):
-        contents.seek(0)
+        try:
+            contents.seek(0)
+        except Exception:
+            pass
         contents = contents.read()
     media_type = get_mime_from_extension(extension)
     data_url = f"data:{media_type};base64"
