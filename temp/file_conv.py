@@ -76,7 +76,7 @@ if __name__ == "__main__":
         print(f"❌ 文件不存在: {input_pdf_path}")
     else:
         # ---------- 第一步：PDF 转 Word ----------
-        pdf_to_docx(input_pdf_path, temp_docx_name)
+        # pdf_to_docx(input_pdf_path, temp_docx_name)
         # ---------- 第二步：Word 转 HTML ----------
         html_str = docx_to_html(temp_docx_name)
         html_str = html_str.replace('<table>', '<table border="1">')

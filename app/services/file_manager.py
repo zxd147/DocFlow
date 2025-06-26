@@ -1,4 +1,3 @@
-import base64
 import copy
 import json
 import os
@@ -17,10 +16,9 @@ from app.models.request_model import FileModelRequest
 from app.models.response_model import FileModelResponse, FileDataResponse
 from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_html
 from app.utils.exception import file_exception
-from app.utils.file import get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64, \
-    convert_contents_to_base64, \
-    to_bytesio, to_text, copy_file, get_full_path, get_short_data, async_save_contents_to_path, \
-    local_path_to_url, add_timestamp_to_filepath, get_mime_from_extension
+from app.utils.file import (get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64,
+                            convert_contents_to_base64,  to_bytesio, to_text, copy_file, get_full_path, get_short_data,
+                            async_save_contents_to_path, local_path_to_url, add_timestamp_to_filepath, get_mime_from_extension)
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -31,7 +29,7 @@ conversion_map = {
     # 其他...
 }
 
-async def handle_file_operation(request_model, file, mode, convert_type=None) -> Union[JSONResponse, StreamingResponse]:
+async def handle_file_operation(request_model, file, mode, convert_type='') -> Union[JSONResponse, StreamingResponse]:
     try:
         logger.info(f"{mode.capitalize()} file request param: {request_model.model_dump()}.")
         contents, name, ext, size, info = await get_contents(request_model, mode=mode, file=file)
@@ -72,7 +70,8 @@ async def handle_file_operation(request_model, file, mode, convert_type=None) ->
         results, results_log = build_results(request_model, code, messages, name, ext, return_path, return_url,
                                              full_base64, short_base64, full_text, short_text)
         logger.info(f"{mode.capitalize()} file response param: {results_log.model_dump()}.")
-        return build_response(contents, results, name, ext, request_model.return_file)
+        response = build_response(contents, results, name, ext, request_model.return_file)
+        return response
     except Exception as e:
         code, status, msg = file_exception(e)
         logger.error(traceback.format_exc())
@@ -168,11 +167,12 @@ def build_results(request, code, messages, name, ext, path, url, full_base64, sh
 def build_response(file_contents, results, name, ext, return_file):
     if file_contents and return_file:
         metadata_json = json.dumps(results.model_dump(), ensure_ascii=False)
-        metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
+        # import base64
+        # metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
         filename = f"{name}{ext}"
-        media_type = get_mime_from_extension(ext) or "application/octet-stream"
-        headers = {"X-File-Metadata": metadata_json, "Content-Disposition": f'attachment; filename="{filename}"',}
-        # file_contents = to_bytesio(file_contents)
+        media_type = "application/octet-stream" or get_mime_from_extension(ext)
+        headers = {"X-File-Metadata": metadata_json, "Content-Disposition": f'attachment; filename="{filename}"'}
+        file_contents = to_bytesio(file_contents)
         file_contents.seek(0)
         return StreamingResponse(file_contents, media_type=media_type, headers=headers)
     else:

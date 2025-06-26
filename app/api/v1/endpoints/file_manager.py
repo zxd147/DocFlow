@@ -26,7 +26,7 @@ async def extract_text(request: FileModelRequest, file: Optional[UploadFile] = F
     response = await handle_file_operation(request, file=file, mode="extract")
     return response
 
-@router.post("/convert_file/{convert_file}")
+@router.post("/convert_file/{convert_type}")
 async def docx2html(request: Request, convert_type: Literal["pdf2docx", "pdf2html",
                     "docx2pdf", "docx2html", "html2docx", "html2pdf"] = "pdf2docx",
                     file: Optional[UploadFile] = File(None)):

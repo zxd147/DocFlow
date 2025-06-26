@@ -6,14 +6,15 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
 from pdf2docx import Converter
 
+from app.utils.file import to_bytesio
+
 
 async def convert_pdf_to_docx(input_path: str = "", input_text: str = "", input_stream: BinaryIO = None,
                         output_path: str = "", output_text: str = "", output_stream: BinaryIO = None):
     cv = Converter(pdf_file=input_path, stream=input_stream)
-    cv.convert(output_stream or output_path, start=0, end=None)
+    cv.convert(output_path or output_stream, start=0, end=None)
     cv.close()
     output_stream.seek(0)
-    print(f"Word 文件已保存至 {output_stream}")
     return output_path, output_text, output_stream
 
 async def convert_docx_to_html(input_path: str = "", input_text: str = "", input_stream: BinaryIO = None,
@@ -28,6 +29,8 @@ async def convert_docx_to_html(input_path: str = "", input_text: str = "", input
     # 格式化处理
     output_clean = remove_nested_tables(output_text)
     output_text = format_html(output_clean)
+    output_stream = to_bytesio(output_text)
+    output_stream.seek(0)
     return output_path, output_text, output_stream
 
 # ---------- 第三步：去除嵌套表格 ----------
