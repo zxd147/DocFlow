@@ -3,7 +3,6 @@ import json
 import os
 import traceback
 import uuid
-from io import BytesIO
 from pathlib import Path
 from typing import Union
 from urllib.parse import urlparse, unquote
@@ -12,40 +11,45 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.configs.settings import settings
+from app.models.file_params import FileConvertParams
 from app.models.request_model import FileModelRequest
 from app.models.response_model import FileModelResponse, FileDataResponse
-from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_html
+from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_md_or_html
 from app.utils.exception import file_exception
-from app.utils.file import (get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_file, get_bytes_from_base64,
-                            convert_contents_to_base64,  to_bytesio, to_text, copy_file, get_full_path, get_short_data,
-                            async_save_contents_to_path, local_path_to_url, add_timestamp_to_filepath, get_mime_from_extension)
+from app.utils.file import (get_bytes_from_url, async_get_string_or_bytes_from_path, get_bytes_from_base64,
+                            copy_file, get_full_path, get_short_data, local_path_to_url, add_timestamp_to_filepath,
+                            get_mime_from_extension, async_get_bytes_from_file, text_to_binary, is_text_file,
+                            binary_to_text, async_save_string_or_bytes_to_path, raw_to_stream, convert_bytes_to_base64)
 from app.utils.logger import get_logger
 
 logger = get_logger()
 
 conversion_map = {
     "pdf2docx": convert_pdf_to_docx,
-    "docx2html": convert_docx_to_html,
+    "docx2html": convert_docx_to_md_or_html,
     # 其他...
 }
 
 async def handle_file_operation(request_model, file, mode, convert_type='') -> Union[JSONResponse, StreamingResponse]:
     try:
         logger.info(f"{mode.capitalize()} file request param: {request_model.model_dump()}.")
-        contents, name, ext, size, info = await get_contents(request_model, mode=mode, file=file)
+        raw, name, ext, size, info = await get_raw(request_model, mode=mode, file=file)
         logger.info(info)
-        text_data = ''
-        if not contents or not info:
-            raise ValueError("No valid file content found.")
-        if mode == "upload" or mode == "extract":
-            return_url, return_path = await save_file_and_get_url(request_model.data.file_path, settings.protected_manager_dir, contents, request_model.do_save, name, ext)
+        extra = {}
+        code = 0
+        if not raw:
+            raise ValueError("No valid file raw found.")
+        if mode == "upload":
+            return_url, return_path = await save_file_and_get_url(request_model.data.file_path, settings.protected_manager_dir, raw, request_model.do_save, name, ext)
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
         elif mode == "convert":
-            _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, contents, request_model.do_save, name, ext)
-            stream = BytesIO()
-            contents = to_bytesio(contents)
-            convert_path, convert_text, convert_contents = await conversion_map[convert_type](input_stream=contents, output_stream=stream)
-            url, path, name, ext = await get_convert_path_and_url(save_path, convert_contents, convert_type)
-            return_url, return_path, contents, text_data = url, path, convert_contents, convert_text
+            _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, raw, request_model.do_save, name, ext)
+            url, path, name, ext = await get_convert_path_and_url(save_path, convert_type)
+            is_text = is_text_file(path)
+            params = FileConvertParams(convert_type=convert_type, is_text=is_text, input_stream=raw)
+            convert_raw, convert_stream = await conversion_map[convert_type](params)
+            return_path = await async_save_string_or_bytes_to_path(convert_raw, path)
+            return_url, return_raw, return_stream = url, convert_raw, convert_stream
         elif mode == "download":
             return_url = request_model.data.file_url
             return_path = request_model.data.file_payh
@@ -55,22 +59,25 @@ async def handle_file_operation(request_model, file, mode, convert_type='') -> U
             elif return_path and return_path.startswith(settings.public_manager_dir):
                 return_path = return_path.replace(settings.protected_manager_dir, settings.public_manager_dir)
                 copy_file(return_path, return_path)
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
+        elif mode == "extract":
+            return_url, return_path = "", ""
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
+        elif mode == "fill":
+            return_url, return_path = "", ""
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
         else:
             return_url = request_model.data.file_url
             return_path = request_model.data.file_path
-        code = 0
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
         messages = f"File {mode}ed successfully. {info}"
-        # from app.utils.file import to_bytes
-        # contents = to_bytes(contents)
-        text = to_text(contents) if request_model.return_text and ext.lower() in [".txt", ".csv", ".json", ".xml", ".html", ".md"] else ''
-        text_data = text_data or text
-        base64_data = convert_contents_to_base64(contents, ext)
-        full_base64, short_base64 = get_short_data(base64_data, request_model.return_base64, request_model.return_file)
-        full_text, short_text = get_short_data(text_data, request_model.return_text, request_model.return_file)
-        results, results_log = build_results(request_model, code, messages, name, ext, return_path, return_url,
-                                             full_base64, short_base64, full_text, short_text)
+        base64_str = convert_bytes_to_base64(raw, ext)
+        full_base64, short_base64 = get_short_data(base64_str, request_model.return_base64, request_model.return_file)
+        full_raw, short_raw = get_short_data(return_raw, request_model.return_raw, request_model.return_file)
+        results, results_log = build_results(request_model, code, messages, extra, name, ext, return_url, return_path,
+                                             full_base64, short_base64, full_raw, short_raw)
         logger.info(f"{mode.capitalize()} file response param: {results_log.model_dump()}.")
-        response = build_response(contents, results, name, ext, request_model.return_file)
+        response = build_response(return_stream, results, name, ext, request_model.return_file)
         return response
     except Exception as e:
         code, status, msg = file_exception(e)
@@ -93,7 +100,7 @@ async def parse_file_request(request) -> FileModelRequest:
         raise HTTPException(status_code=415, detail="Unsupported Content-Type")
     return request_data
 
-async def get_contents(request_data, mode, file):
+async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str, int, str]:
     data = request_data.data
     split_name, split_ext = os.path.splitext(data.file_name or "")
     if data.is_empty() and not file:
@@ -101,80 +108,90 @@ async def get_contents(request_data, mode, file):
     if file and mode != "download":
         file_split_name, file_split_ext = os.path.splitext(file.filename or "")
         source_name = split_name or file_split_name or file.filename or uuid.uuid4().hex[:8]
-        source_contents, source_size, file_extension = get_bytes_from_file(file)
-        source_format = data.file_format or split_ext or file_split_ext or file_extension or ".bin"
-        source_info = f"Get File mode: file, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
+        source_raw, _, file_extension = await async_get_bytes_from_file(file)
+        source_ext = data.file_format or split_ext or file_split_ext or file_extension or ".bin"
+        source_raw = binary_to_text(source_raw) if is_text_file(source_ext) else source_raw
+        source_size = len(source_raw)
+        source_info = f"Get File mode: file, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
     elif data.file_url:
         parsed_url = urlparse(data.file_url)
         url_path = unquote(parsed_url.path)
         url_split_name, url_split_ext = os.path.splitext(os.path.basename(url_path))
         source_name = split_name or url_split_name or uuid.uuid4().hex[:8]
-        source_contents, source_size, file_extension = await get_bytes_from_url(data.file_url)
-        source_format = data.file_format or split_ext or url_split_ext or file_extension or ".bin"
-        source_info = f"Get File mode: url, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
+        source_raw, _, file_extension = await get_bytes_from_url(data.file_url)
+        source_ext = data.file_format or split_ext or url_split_ext or file_extension or ".bin"
+        source_raw = binary_to_text(source_raw) if is_text_file(source_ext) else source_raw
+        source_size = len(source_raw)
+        source_info = f"Get File mode: url, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
     elif data.file_base64 and mode != "download":
         source_name = split_name or uuid.uuid4().hex[:8]
-        source_contents, source_size, file_extension = get_bytes_from_base64(data.file_base64)
-        source_format = data.file_format or split_ext or file_extension or ".bin"
-        source_info = f"Get File mode: base64, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
+        source_raw, _, file_extension = get_bytes_from_base64(data.file_base64)
+        source_ext = data.file_format or split_ext or file_extension or ".bin"
+        source_raw = binary_to_text(source_raw) if is_text_file(source_ext) else source_raw
+        source_size = len(source_raw)
+        source_info = f"Get File mode: base64, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
+    elif data.file_text and mode != "download":
+        source_name = split_name or uuid.uuid4().hex[:8]
+        source_ext = data.file_format or split_ext or ".txt"
+        source_raw = data.file_text if is_text_file(source_ext) else text_to_binary(data.file_text)
+        source_size = len(source_raw)
+        source_info = f"Get File mode: base64, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
     elif data.file_path and mode != "upload":
         path_split_name, path_split_ext = os.path.splitext(os.path.basename(data.file_path))
         source_name = split_name or path_split_name or uuid.uuid4().hex[:8]
-        source_format = data.file_format or split_ext or  path_split_ext or ".bin"
-        source_contents, source_size = await async_get_bytes_from_path(data.file_path)
-        source_info = f"Get file mode: path, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
+        source_ext = data.file_format or split_ext or  path_split_ext or ".bin"
+        file_path = get_full_path(settings.public_manager_dir, data.file_path, source_name, source_ext)
+        source_raw, _ = await async_get_string_or_bytes_from_path(file_path)
+        source_size = len(source_raw)
+        source_info = f"Get file mode: path, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
     elif data.file_name and mode != "upload":
         source_name = split_name or uuid.uuid4().hex[:8]
-        source_format = data.file_format or split_ext or ""
-        file_path = os.path.join(settings.temp_manager_dir, f"{source_name}{source_format}")
-        source_contents, source_size = await async_get_bytes_from_path(file_path)
-        source_info = f"Get File mode: name, Name: {source_name}, Format: {source_format}, Size: {source_size} bytes."
+        source_ext = data.file_format or split_ext or ""
+        file_path = os.path.join(settings.temp_manager_dir, f"{source_name}{source_ext}")
+        source_raw, _ = await async_get_string_or_bytes_from_path(file_path)
+        source_size = len(source_raw)
+        source_info = f"Get File mode: name, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
     else:
         raise HTTPException(status_code=400, detail="Unsupported file mode provided. Missing file information: no file_url, file_path, file_base64, file_name, or uploaded file provided.")
-    return source_contents, source_name, source_format, source_size, source_info
+    return source_raw, source_name, source_ext, source_size, source_info
 
-async def save_file_and_get_url(file_path, directory, contents, do_save, name, ext):
+async def save_file_and_get_url(path, directory, raw, do_save, name, ext):
     st_fmt = "full" if do_save else "null"
-    save_path = get_full_path(directory, file_path, name, ext, st_fmt)
+    save_path = get_full_path(directory, path, name, ext, st_fmt)
     save_url = local_path_to_url(save_path, settings.static_root, settings.static_url) \
         if save_path and save_path.startswith(settings.static_root) else ''
-    await async_save_contents_to_path(contents, save_path) if do_save else None
+    save_path = await async_save_string_or_bytes_to_path(raw, save_path) if do_save else None
     return save_url, save_path
 
-async def get_convert_path_and_url(file_path, contents, convert_type):
-    src_ext, dst_ext = convert_type.split("2", 1)
-    if os.path.splitext(file_path)[1] != f".{src_ext}":
-        raise ValueError(f"文件{file_path}扩展名与转换类型不匹配: {os.path.splitext(file_path)[1]} != .{src_ext}")
-    # 用新的扩展名替换原来的
-    convert_path = str(Path(file_path).with_suffix(f".{dst_ext}"))
-
-    convert_path = add_timestamp_to_filepath(convert_path, fmt='minute')
-    convert_name, convert_ext = os.path.splitext(os.path.basename(convert_path))
+async def get_convert_path_and_url(path, convert_type):
+    src_ext, dst_ext = convert_type.split("_", 1)[0].split("2", 1)
+    path_ext = os.path.splitext(path)[1]
+    if path_ext != f".{src_ext}":
+        raise ValueError(f"文件{path}扩展名与转换类型不匹配: {path_ext} != .{src_ext}")
+    ext_path = Path(path).with_suffix(f".{dst_ext}")
+    ts_path = Path(add_timestamp_to_filepath(str(ext_path), fmt='minute'))
+    convert_name, convert_ext, convert_path = ts_path.stem, ts_path.suffix, str(ts_path)
     convert_url = local_path_to_url(convert_path, settings.static_root, settings.static_url) \
-        if convert_path and convert_path.startswith(settings.static_root) else ''
-    await async_save_contents_to_path(contents, convert_path)
+        if convert_path.startswith(settings.static_root) else ''
     return convert_url, convert_path, convert_name, convert_ext
 
 # 提取的通用工具模块
-def build_results(request, code, messages, name, ext, path, url, full_base64, short_base64, full_text, short_text):
-    data = FileDataResponse(file_name=name, file_format=ext, file_url=url, file_path=path, file_base64=full_base64, file_text=full_text)
-    results = FileModelResponse(uid=request.uid, sno=request.sno, code=code, messages=messages, data=data)
+def build_results(request, code, messages, extra, name, fmt, url, path, full_base64, short_base64, full_raw, short_raw):
+    data = FileDataResponse(file_name=f"{name}{fmt}", file_format=fmt, file_base64=full_base64, file_raw=full_raw, file_url=url, file_path=path)
+    results = FileModelResponse(uid=request.uid, sno=request.sno, code=code, messages=messages, extra=extra, data=data)
     results_log = copy.deepcopy(results)
     results_log.data.file_base64 = short_base64
-    results_log.data.file_text = short_text
+    results_log.data.file_text = short_raw
     return results, results_log
 
-def build_response(file_contents, results, name, ext, return_file):
-    if file_contents and return_file:
+def build_response(content, results, name, ext, return_file):
+    if content and return_file:
         metadata_json = json.dumps(results.model_dump(), ensure_ascii=False)
         # import base64
         # metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
-        filename = f"{name}{ext}"
         media_type = "application/octet-stream" or get_mime_from_extension(ext)
-        headers = {"X-File-Metadata": metadata_json, "Content-Disposition": f'attachment; filename="{filename}"'}
-        file_contents = to_bytesio(file_contents)
-        file_contents.seek(0)
-        return StreamingResponse(file_contents, media_type=media_type, headers=headers)
+        headers = {"X-File-Metadata": metadata_json, "Content-Disposition": f'attachment; filename="{name}{ext}"'}
+        return StreamingResponse(content=content, media_type=media_type, headers=headers)
     else:
         return JSONResponse(status_code=200, content=results.model_dump())
 

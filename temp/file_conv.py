@@ -7,8 +7,13 @@ from pdf2docx import Converter
 
 
 def pdf_to_docx(pdf_path, docx_path):
+    read = True
+    if pdf_path.endswith('.pdf') and read:
+        with open(pdf_path, 'rb') as f:
+            stream = f.read()
+    print(f"isinstance: {isinstance(stream, bytes)}")
     print(f"正在将 {pdf_path} 转换为 Word 文件...")
-    cv = Converter(pdf_path)
+    cv = Converter(pdf_file=pdf_path, stream=stream)
     cv.convert(docx_path, start=0, end=None)
     cv.close()
     print(f"Word 文件已保存至 {docx_path}")
@@ -76,7 +81,7 @@ if __name__ == "__main__":
         print(f"❌ 文件不存在: {input_pdf_path}")
     else:
         # ---------- 第一步：PDF 转 Word ----------
-        # pdf_to_docx(input_pdf_path, temp_docx_name)
+        pdf_to_docx(input_pdf_path, temp_docx_name)
         # ---------- 第二步：Word 转 HTML ----------
         html_str = docx_to_html(temp_docx_name)
         html_str = html_str.replace('<table>', '<table border="1">')

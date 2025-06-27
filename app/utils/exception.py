@@ -61,6 +61,9 @@ def file_exception(exc):
     elif isinstance(exc, ValueError):
         status = 400
         return code, status, message
+    elif isinstance(exc, TimeoutError):
+        status = 408
+        return code, status, message
     else:
         status = 500
         return code, status, message
