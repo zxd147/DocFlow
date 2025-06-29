@@ -433,10 +433,10 @@ def url_to_local_path(url: str, base_dir: str, base_url: str) -> str:
     full_path = str(local_path)
     return full_path
 
-def get_short_data(data, return_data: bool, return_file: bool) -> Tuple[str, str]:
+def get_short_data(data, return_data: bool, return_stream: bool) -> Tuple[str, str]:
     # len('data:audio/wav;base64,'): 22
     short_data = f"{data[:50]}...{data[-20:]}"
-    full_data = short_data if not return_data or return_file else data
+    full_data = short_data if not return_data or return_stream else data
     return full_data, short_data
 
 def copy_file(src_path: str, dst_path: str) -> None:

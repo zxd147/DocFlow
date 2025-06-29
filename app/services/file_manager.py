@@ -13,13 +13,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.core.configs.settings import settings
 from app.models.file_params import FileConvertParams
 from app.models.request_model import FileModelRequest
-from app.models.response_model import FileModelResponse, FileDataResponse
+from app.models.response_model import FileModelResponse
+from app.models.file_params import FileDataModel
 from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_md_or_html
 from app.utils.exception import file_exception
-from app.utils.file import (get_bytes_from_url, async_get_string_or_bytes_from_path, get_bytes_from_base64,
-                            copy_file, get_full_path, get_short_data, local_path_to_url, add_timestamp_to_filepath,
-                            get_mime_from_extension, async_get_bytes_from_file, text_to_binary, is_text_file,
-                            binary_to_text, async_save_string_or_bytes_to_path, raw_to_stream, convert_bytes_to_base64)
+from app.utils.file import (get_bytes_from_url, async_get_string_or_bytes_from_path, get_bytes_from_base64, async_get_bytes_from_file,
+                            get_mime_from_extension, local_path_to_url, add_timestamp_to_filepath, convert_bytes_to_base64, async_save_string_or_bytes_to_path,
+                            get_full_path, get_short_data, copy_file, binary_to_text, is_text_file, text_to_binary, raw_to_stream)
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -41,7 +41,7 @@ async def handle_file_operation(request_model, file, mode, convert_type='') -> U
             raise ValueError("No valid file raw found.")
         if mode == "upload":
             return_url, return_path = await save_file_and_get_url(request_model.data.file_path, settings.protected_manager_dir, raw, request_model.do_save, name, ext)
-            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         elif mode == "convert":
             _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, raw, request_model.do_save, name, ext)
             url, path, name, ext = await get_convert_path_and_url(save_path, convert_type)
@@ -59,25 +59,28 @@ async def handle_file_operation(request_model, file, mode, convert_type='') -> U
             elif return_path and return_path.startswith(settings.public_manager_dir):
                 return_path = return_path.replace(settings.protected_manager_dir, settings.public_manager_dir)
                 copy_file(return_path, return_path)
-            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         elif mode == "extract":
             return_url, return_path = "", ""
-            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         elif mode == "fill":
             return_url, return_path = "", ""
-            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         else:
             return_url = request_model.data.file_url
             return_path = request_model.data.file_path
-            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_file else (raw, None)
+            return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         messages = f"File {mode}ed successfully. {info}"
         base64_str = convert_bytes_to_base64(raw, ext)
-        full_base64, short_base64 = get_short_data(base64_str, request_model.return_base64, request_model.return_file)
-        full_raw, short_raw = get_short_data(return_raw, request_model.return_raw, request_model.return_file)
+        full_base64, short_base64 = get_short_data(base64_str, request_model.return_base64, request_model.return_stream)
+        full_raw, short_raw = get_short_data(return_raw, request_model.return_raw, request_model.return_stream)
         results, results_log = build_results(request_model, code, messages, extra, name, ext, return_url, return_path,
                                              full_base64, short_base64, full_raw, short_raw)
         logger.info(f"{mode.capitalize()} file response param: {results_log.model_dump()}.")
-        response = build_response(return_stream, results, name, ext, request_model.return_file)
+        if results.data.is_empty() and not return_stream:
+            raise HTTPException(status_code=400,
+                    detail=f"No  return file information, data.is_empty: {results.data.is_empty()} and not return_stream: {not return_stream}.")
+        response = build_response(return_stream, results, name, ext, request_model.return_stream)
         return response
     except Exception as e:
         code, status, msg = file_exception(e)
@@ -130,10 +133,10 @@ async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str
         source_raw = binary_to_text(source_raw) if is_text_file(source_ext) else source_raw
         source_size = len(source_raw)
         source_info = f"Get File mode: base64, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
-    elif data.file_text and mode != "download":
+    elif data.file_raw and mode != "download":
         source_name = split_name or uuid.uuid4().hex[:8]
         source_ext = data.file_format or split_ext or ".txt"
-        source_raw = data.file_text if is_text_file(source_ext) else text_to_binary(data.file_text)
+        source_raw = data.file_raw if is_text_file(source_ext) else text_to_binary(data.file_raw)
         source_size = len(source_raw)
         source_info = f"Get File mode: base64, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
     elif data.file_path and mode != "upload":
@@ -177,15 +180,15 @@ async def get_convert_path_and_url(path, convert_type):
 
 # 提取的通用工具模块
 def build_results(request, code, messages, extra, name, fmt, url, path, full_base64, short_base64, full_raw, short_raw):
-    data = FileDataResponse(file_name=f"{name}{fmt}", file_format=fmt, file_base64=full_base64, file_raw=full_raw, file_url=url, file_path=path)
+    data = FileDataModel(file_name=f"{name}{fmt}", file_format=fmt, file_base64=full_base64, file_raw=full_raw, file_url=url, file_path=path)
     results = FileModelResponse(uid=request.uid, sno=request.sno, code=code, messages=messages, extra=extra, data=data)
     results_log = copy.deepcopy(results)
     results_log.data.file_base64 = short_base64
-    results_log.data.file_text = short_raw
+    results_log.data.file_raw = short_raw
     return results, results_log
 
-def build_response(content, results, name, ext, return_file):
-    if content and return_file:
+def build_response(content, results, name, ext, return_stream):
+    if return_stream:
         metadata_json = json.dumps(results.model_dump(), ensure_ascii=False)
         # import base64
         # metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
