@@ -7,7 +7,7 @@ class FileConvertParams:
     convert_type: str
     is_text: bool
     input_path: str = ""
-    input_stream: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
+    input_raw: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
 
 @dataclass
 class FileStreamOrData:

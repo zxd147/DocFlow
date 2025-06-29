@@ -46,7 +46,7 @@ async def handle_file_operation(request_model, file, mode, convert_type='') -> U
             _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, raw, request_model.do_save, name, ext)
             url, path, name, ext = await get_convert_path_and_url(save_path, convert_type)
             is_text = is_text_file(path)
-            params = FileConvertParams(convert_type=convert_type, is_text=is_text, input_stream=raw)
+            params = FileConvertParams(convert_type=convert_type, is_text=is_text, input_raw=raw)
             convert_raw, convert_stream = await conversion_map[convert_type](params)
             return_path = await async_save_string_or_bytes_to_path(convert_raw, path)
             return_url, return_raw, return_stream = url, convert_raw, convert_stream

@@ -1,127 +1,25 @@
 import os
 from io import BytesIO, StringIO
+from typing import Union
 
+import html2markdown
+import html2text
 import mammoth
+import markdown as md
+import mistune
+import pandas as pd
 from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
+from markdown_it import MarkdownIt
+from markitdown import MarkItDown
 from pdf2docx import Converter
+from tomd import Tomd
 
 from app.models.file_params import FileConvertParams
 from app.utils.file import raw_to_stream, stream_to_raw
 from app.utils.logger import get_logger
 
 logger = get_logger()
-
-async def convert_pdf_to_docx(params: FileConvertParams):
-    output_stream = StringIO() if params.is_text else BytesIO()
-    logger.info(f"Converting pdf to docx...")
-    cv = Converter(pdf_file=params.input_path, stream=params.input_stream)
-    cv.convert(output_stream, start=0, end=None)
-    cv.close()
-    output_raw = stream_to_raw(output_stream)
-    return output_raw, output_stream
-
-async def convert_docx_to_md_or_html(params: FileConvertParams):
-    input_path, input_stream = params.input_path, params.input_stream
-    input_stream = raw_to_stream(input_stream) if input_stream else None
-    if input_path and os.path.exists(input_path):
-        with open(input_path, "rb") as docx_file:
-            input_stream = BytesIO(docx_file.read())
-    logger.info(f"Converting docx to html or markdown: {params.convert_type}...")
-    if "html" in params.convert_type:
-        result = mammoth.convert_to_html(input_stream)
-    else:
-        result = mammoth.convert_to_markdown(input_stream)
-    output_html = result.value
-    output_html = output_html.replace('<table>', '<table border="1">')
-    # 格式化处理
-    clean_html = remove_html_nested_tables(output_html)
-    output_raw = format_html(clean_html)
-    output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
-
-def convert_excel_to_markdown_or_html(params: FileConvertParams):
-    # 读取文件为 DataFrame
-    import pands as pd
-    from markitdown import MarkItDown
-    import pandas, openpyxl, xlrd, tabulate, markitdown
-    convert_type, input_path, input_stream = params.convert_type, params.input_path, pandas.input_stream
-    if isinstance(input_stream, BytesIO):
-        input_stream.seek(0)
-        input_stream = to_stringio(input_stream)
-    csv_stream = BytesIO(csv_bytes)
-
-    # 推荐做法：加 encoding 参数（或事先 decode 成 str 再用 StringIO）
-    df = pd.read_csv(csv_stream, encoding="utf-8")
-    if "csv" in convert_type:
-        df = pd.read_csv(input_stream)
-    elif "xls" in convert_type:
-        df = pd.read_excel(input_stream, engine="openpyxl")
-    elif "xlsx" in convert_type:
-        df = pd.read_excel(input_stream, engine = "xlrd")
-    else:
-        raise ValueError(f"Unsupported convert file type: {convert_type}")
-    def use_markitdown():
-        # 转为 Markdown
-        if "html" in convert_type:
-            result = df.to_html(index=False)
-        elif "md" in convert_type:
-            result = df.to_markdown(index=False)
-        else:
-            df.to_excel("file.xlsx", index=False)
-
-    md = MarkItDown()
-    result = md.convert("input.xlsx")  # 或 input.csv
-    with open("file.docx", "rb") as f:
-        result = md.convert_stream(f)
-    with open("output.md", "w") as f:
-        f.write(result.text_content)
-
-    return result
-
-def convert_md2html():
-    from markdown as md
-    print(dir(markdown))
-    file = open('help.md', 'r', encoding='utf-8').read()
-    html = md.markdown(file)
-    print(html)
-    with open('ret.html', 'w', encoding='utf-8') as file:
-        file.write(html)
-
-    import mistune
-
-
-def convert_html2md(input_path='ret.html', output_path_prefix='make'):
-    converters = []
-    # 方式1: html2text
-    def use_html2text(html):
-        import html2text
-        return html2text.html2text(html)
-    converters.append(('html2text', use_html2text))
-    # 方式2: html2markdown
-    def use_html2markdown(html):
-        import html2markdown
-        return html2markdown.convert(html)
-    converters.append(('html2markdown', use_html2markdown))
-    # 方式3: tomd
-    def use_tomd(html):
-        from tomd import Tomd
-        return Tomd(html).markdown
-    converters.append(('tomd', use_tomd))
-    # 读取 HTML
-    with open(input_path, 'r', encoding='utf-8') as f:
-        html_text = f.read()
-    # 随机选择一个转换器
-    name, converter_func = random.choice(converters)
-    markdown = converter_func(html_text)
-    # 输出 Markdown 文件
-    output_file = f'{output_path_prefix}_{name}.md'
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(markdown)
-    print(f'使用 {name} 模块完成转换，输出为：{output_file}')
-
-def convert_
-
 
 def remove_html_nested_tables(raw_html):
     soup = BeautifulSoup(raw_html, "html.parser")
@@ -167,40 +65,107 @@ def format_html(raw_html):
     final_html = "\n".join(lines)
     return final_html
 
+async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    output_stream = StringIO() if params.is_text else BytesIO()
+    logger.info(f"Converting pdf to docx...")
+    cv = Converter(pdf_file=params.input_path, stream=params.input_raw)
+    cv.convert(output_stream, start=0, end=None)
+    cv.close()
+    output_raw = stream_to_raw(output_stream)
+    return output_raw, output_stream
 
-
-
-
-
-
-
-
-
-
-
-# ---------- 示例调用 ----------
-if __name__ == "__main__":
-    input_pdf_path = "./2024-0.pdf"
-    temp_docx_name = "2024-0.docx"
-    output_html_path = "/home/agi/zxd/file/0619/000/2024-0.html"
-
-    # 检查 PDF 文件是否存在
-    if not os.path.exists(input_pdf_path):
-        print(f"❌ 文件不存在: {input_pdf_path}")
+async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    input_path, input_raw = params.input_path, params.input_raw
+    input_stream = raw_to_stream(input_raw)
+    if input_path and os.path.exists(input_path):
+        with open(input_path, "rb") as docx_file:
+            input_stream = BytesIO(docx_file.read())
+    logger.info(f"Converting docx to html or markdown: {params.convert_type}...")
+    if "html" in params.convert_type:
+        result = mammoth.convert_to_html(input_stream)
     else:
-        # ---------- 第一步：PDF 转 Word ----------
-        convert_pdf_to_docx(input_path=input_pdf_path, output_path=temp_docx_name)
-        # ---------- 第二步：Word 转 HTML ----------
-        html_path, html_text, html_contents = convert_docx_to_html(input_path=temp_docx_name)
-        # html_str = html_str.replace('<table>', '<table border="1">')
-        # # 格式化处理
-        # ---------- 第三步：去除嵌套表格 ----------
-        # clean_html = remove_html_nested_tables(html_str)
-        # # ---------- 第四步：格式化 HTML ----------
-        # formatted_html = format_html(clean_html)
-        formatted_html = html_text
-        with open(output_html_path, "w", encoding="utf-8") as html_file:
-            html_file.write(formatted_html)
-        print(f"HTML 文件已保存至 {output_html_path}")
+        result = mammoth.convert_to_markdown(input_stream)
+    output_html = result.value
+    output_html = output_html.replace('<table>', '<table border="1">')
+    # 格式化处理
+    clean_html = remove_html_nested_tables(output_html)
+    output_raw = format_html(clean_html)
+    output_stream = raw_to_stream(output_raw)
+    return output_raw, output_stream
+
+def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    convert_type, input_raw = params.convert_type, params.input_raw
+    input_stream = raw_to_stream(input_raw)
+    output_stream = StringIO() if params.is_text else BytesIO()
+    dfs_dict, dfs = {}, []
+    if "html2" in convert_type:
+        dfs = pd.read_html(input_stream, encoding="utf-8")
+    elif "csv2" in convert_type:
+        dfs = [pd.read_csv(input_stream, encoding="utf-8")]  # 转为列表以保持一致
+    elif "xls2" in convert_type:
+        dfs_dict = pd.read_excel(input_stream, sheet_name=None, engine="xlrd")
+    elif "xlsx2" in convert_type:
+        dfs_dict = pd.read_excel(input_stream, sheet_name=None, engine="openpyxl")
+    else:
+        raise ValueError(f"Unsupported convert file type: {convert_type}")
+    sheet_names = list(dfs_dict.keys()) if dfs_dict else [f"Table{i + 1}" for i in range(len(dfs))]
+    dfs = list(dfs_dict.values()) if dfs_dict else dfs
+    if "2html" in convert_type:
+        html_blocks = [df.to_html(index=False, border=1) for df in dfs]
+        parts = [f"<h2>{name}</h2><br>\n{html}" for name, html in zip(sheet_names, html_blocks)]
+        output_raw = "<br><hr><br>".join(parts)
+    elif "2md" in convert_type:
+        md_blocks = [df.to_markdown(index=False) for df in dfs]
+        parts = [f"## {name}\n\n{markdown}" for name, markdown in zip(sheet_names, md_blocks)]
+        output_raw = "\n\n---\n\n".join(parts)
+    elif "2csv" in convert_type:
+        if len(dfs) > 1:
+            for i, df in enumerate(dfs):
+                df['TableName'] = sheet_names[i]
+        df = pd.concat(dfs, ignore_index=True)
+        output_raw = df.to_csv(index=False)
+    else:
+        with pd.ExcelWriter(output_stream, engine="openpyxl") as writer:
+            for df, name in zip(dfs, sheet_names):
+                df.to_excel(writer, sheet_name=name, index=False)
+        output_raw = stream_to_raw(output_stream)
+    output_stream = raw_to_stream(output_raw) if output_stream.getvalue() == "" else output_stream
+    return output_raw, output_stream
+
+def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    convert_type = params.convert_type
+    mid = MarkItDown()
+    if "2md" not in convert_type:
+        raise ValueError("Only *2md conversions are supported with MarkItDown.")
+    ext = convert_type.replace("2md", "").lower()
+    # 安全性和鲁棒性检查
+    if ext not in {"pdf", "docx", "pptx", "xlsx", "xls", "csv", "html", "json", "xml", "txt",
+                   "epub", "zip", "jpg", "jpeg", "png", "mp3", "wav", "url"}:
+        raise ValueError(f"Unsupported convert_type: {convert_type}")
+    result = mid.convert(params.input_raw)  # 直接传入路径或 URL
+    output_raw = result.text_content
+    output_stream = raw_to_stream(output_raw)
+    return output_raw, output_stream
+
+def convert_html2md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    if "v3" in params.convert_type:
+        output_raw = Tomd(params.input_raw).markdown
+        # output_raw = Tomd().convert(params.input_raw)
+    elif "v2" in params.convert_type:
+        output_raw = html2text.html2text(params.input_raw)
+    else:
+        output_raw = html2markdown.convert(params.input_raw)
+    output_stream = raw_to_stream(output_raw)
+    return output_raw, output_stream
+
+def convert_md2html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    if "v3" in params.convert_type:
+        output_raw = mistune.markdown(params.input_raw)
+    elif "v2" in params.convert_type:
+        output_raw = md.markdown(params.input_raw)
+    else:
+        output_raw = MarkdownIt().render(params.input_raw)
+    output_stream = raw_to_stream(output_raw)
+    return output_raw, output_stream
 
 
