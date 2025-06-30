@@ -175,7 +175,7 @@ async def save_file_and_get_url(path, directory, raw, do_save, name, ext):
     save_path = get_full_path(directory, path, name, ext, st_fmt)
     save_url = local_path_to_url(save_path, settings.static_root, settings.static_url) \
         if save_path and save_path.startswith(settings.static_root) else ''
-    save_path = await async_save_string_or_bytes_to_path(raw, save_path) if do_save else None
+    save_path = await async_save_string_or_bytes_to_path(raw, save_path) if do_save else save_path
     return save_url, save_path
 
 async def get_convert_path_and_url(path, convert_type):
@@ -211,6 +211,7 @@ def build_response(content, results, name, ext, return_stream):
         headers = {"X-File-Metadata": metadata_url, "Content-Disposition": f'attachment; filename="{ascii_safe_name}"; filename*=UTF-8''{quoted_name}'}
         return StreamingResponse(content=content, media_type=media_type, headers=headers)
     else:
+
         return JSONResponse(status_code=200, content=results.model_dump())
 
 
