@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Union, Optional, TextIO, BinaryIO
 
 from pydantic import BaseModel
@@ -21,7 +22,24 @@ class FileConvertParams:
     is_text: bool
     input_path: str = ""
     input_raw: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
+    input_stream: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
 
-@dataclass
-class FileStreamOrData:
-    pass
+class ConvertType(str, Enum):
+    pdf2docx = "pdf2docx"
+    docx2html = "docx2html"
+    pdf2html = "pdf2html"
+    csv2xlsx = "csv2xlsx"
+    csv2html = "csv2html"
+    csv2md = "csv2md"
+    xls2xlsx = "xls2xlsx"
+    xls2html = "xls2html"
+    xls2md = "xls2md"
+    xlsx2csv = "xlsx2csv"
+    xlsx2html = "xlsx2html"
+    xlsx2md = "xlsx2md"
+    html2xlsx = "html2xlsx"
+    html2csv = "html2csv"
+    html2md = "html2md"
+    md2html = "md2html"
+    # 将来新增支持类型：md2html, xls2csv, 等等
+

@@ -3,7 +3,7 @@ from typing import Optional, Union, Dict, Any
 
 from pydantic import BaseModel, Field
 
-from app.models.file_params import FileDataModel
+from app.models.file_conversion import FileDataModel
 
 
 class FileModelRequest(BaseModel):

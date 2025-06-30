@@ -1,7 +1,8 @@
-from typing import Optional, Literal
+from typing import Optional
 
 from fastapi import APIRouter, Request, File, UploadFile
 
+from app.models.file_conversion import ConvertType
 from app.models.request_model import FileModelRequest
 from app.services.file_manager import parse_file_request, handle_file_operation
 from app.utils.logger import get_logger
@@ -20,18 +21,16 @@ async def download_file(request: FileModelRequest):
     response = await handle_file_operation(request, file=None, mode="download")
     return response
 
+@router.post("/convert_file/{convert_type}")
+async def docx2html(request: Request, convert_type: ConvertType = ConvertType.pdf2docx, file: Optional[UploadFile] = File(None)):
+    request = await parse_file_request(request)
+    response = await handle_file_operation(request, file=file, mode="convert", convert_type=convert_type)
+    return response
+
 @router.post("/extract_text")
 async def extract_text(request: FileModelRequest, file: Optional[UploadFile] = File(None)):
     request = await parse_file_request(request)
     response = await handle_file_operation(request, file=file, mode="extract")
-    return response
-
-@router.post("/convert_file/{convert_type}")
-async def docx2html(request: Request, convert_type: Literal["pdf2docx", "pdf2html",
-                    "docx2pdf", "docx2html", "html2docx", "html2pdf"] = "pdf2docx",
-                    file: Optional[UploadFile] = File(None)):
-    request = await parse_file_request(request)
-    response = await handle_file_operation(request, file=file, mode="convert", convert_type=convert_type)
     return response
 
 

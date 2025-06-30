@@ -15,8 +15,8 @@ from markitdown import MarkItDown
 from pdf2docx import Converter
 from tomd import Tomd
 
-from app.models.file_params import FileConvertParams
-from app.utils.file import raw_to_stream, stream_to_raw
+from app.models.file_conversion import FileConvertParams
+from app.utils.file import raw_to_stream, stream_to_raw, seek_stream
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -71,12 +71,13 @@ async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, byt
     cv = Converter(pdf_file=params.input_path, stream=params.input_raw)
     cv.convert(output_stream, start=0, end=None)
     cv.close()
+    seek_stream(output_stream)
     output_raw = stream_to_raw(output_stream)
     return output_raw, output_stream
 
 async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    input_path, input_raw = params.input_path, params.input_raw
-    input_stream = raw_to_stream(input_raw)
+    input_path, input_raw, input_stream = params.input_path, params.input_raw, params.input_stream
+    input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
     if input_path and os.path.exists(input_path):
         with open(input_path, "rb") as docx_file:
             input_stream = BytesIO(docx_file.read())
@@ -93,9 +94,15 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
+async def convert_pdf_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    _, docx_stream = convert_pdf_to_docx(params)
+    params = FileConvertParams(convert_type=params.convert_type, is_text=params.is_text, input_stream=docx_stream)
+    output_raw, output_stream = convert_docx_to_md_or_html(params)
+    return output_raw, output_stream
+
 def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    convert_type, input_raw = params.convert_type, params.input_raw
-    input_stream = raw_to_stream(input_raw)
+    convert_type, input_raw, input_stream = params.convert_type, params.input_raw, params.input_stream
+    input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
     output_stream = StringIO() if params.is_text else BytesIO()
     dfs_dict, dfs = {}, []
     if "html2" in convert_type:
@@ -128,6 +135,7 @@ def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union
         with pd.ExcelWriter(output_stream, engine="openpyxl") as writer:
             for df, name in zip(dfs, sheet_names):
                 df.to_excel(writer, sheet_name=name, index=False)
+        seek_stream(output_stream)
         output_raw = stream_to_raw(output_stream)
     output_stream = raw_to_stream(output_raw) if output_stream.getvalue() == "" else output_stream
     return output_raw, output_stream

@@ -1,3 +1,4 @@
+import base64
 import copy
 import json
 import os
@@ -5,21 +6,25 @@ import traceback
 import uuid
 from pathlib import Path
 from typing import Union
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, quote
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.configs.settings import settings
-from app.models.file_params import FileConvertParams
+from app.models.file_conversion import FileConvertParams
+from app.models.file_conversion import FileDataModel
 from app.models.request_model import FileModelRequest
 from app.models.response_model import FileModelResponse
-from app.models.file_params import FileDataModel
-from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_md_or_html
+from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_md_or_html, convert_pdf_to_md_or_html, \
+    convert_excel_and_markdown_or_html
 from app.utils.exception import file_exception
-from app.utils.file import (get_bytes_from_url, async_get_string_or_bytes_from_path, get_bytes_from_base64, async_get_bytes_from_file,
-                            get_mime_from_extension, local_path_to_url, add_timestamp_to_filepath, convert_bytes_to_base64, async_save_string_or_bytes_to_path,
-                            get_full_path, get_short_data, copy_file, binary_to_text, is_text_file, text_to_binary, raw_to_stream)
+from app.utils.file import (get_bytes_from_url, async_get_string_or_bytes_from_path, get_bytes_from_base64,
+                            async_get_bytes_from_file,
+                            get_mime_from_extension, local_path_to_url, add_timestamp_to_filepath,
+                            convert_bytes_to_base64, async_save_string_or_bytes_to_path,
+                            get_full_path, get_short_data, copy_file, binary_to_text, is_text_file, text_to_binary,
+                            raw_to_stream)
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -27,6 +32,10 @@ logger = get_logger()
 conversion_map = {
     "pdf2docx": convert_pdf_to_docx,
     "docx2html": convert_docx_to_md_or_html,
+    "pdf2html": convert_pdf_to_md_or_html,
+    "csv2md": convert_excel_and_markdown_or_html,
+    "xls2md": convert_excel_and_markdown_or_html,
+    "xlsx2md": convert_excel_and_markdown_or_html,
     # 其他...
 }
 
@@ -71,6 +80,7 @@ async def handle_file_operation(request_model, file, mode, convert_type='') -> U
             return_path = request_model.data.file_path
             return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         messages = f"File {mode}ed successfully. {info}"
+        name = f"{name}{ext}"
         base64_str = convert_bytes_to_base64(raw, ext)
         full_base64, short_base64 = get_short_data(base64_str, request_model.return_base64, request_model.return_stream)
         full_raw, short_raw = get_short_data(return_raw, request_model.return_raw, request_model.return_stream)
@@ -153,7 +163,7 @@ async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str
         file_path = os.path.join(settings.temp_manager_dir, f"{source_name}{source_ext}")
         source_raw, _ = await async_get_string_or_bytes_from_path(file_path)
         source_size = len(source_raw)
-        source_info = f"Get File mode: name, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."
+        source_info = f"Get File mode: name, Name: {source_name}, Extension: {source_ext}, Size: {source_size} {type(source_raw).__name__}."
     else:
         raise HTTPException(status_code=400, detail="Unsupported file mode provided. Missing file information: no file_url, file_path, file_base64, file_name, or uploaded file provided.")
     return source_raw, source_name, source_ext, source_size, source_info
@@ -180,7 +190,7 @@ async def get_convert_path_and_url(path, convert_type):
 
 # 提取的通用工具模块
 def build_results(request, code, messages, extra, name, fmt, url, path, full_base64, short_base64, full_raw, short_raw):
-    data = FileDataModel(file_name=f"{name}{fmt}", file_format=fmt, file_base64=full_base64, file_raw=full_raw, file_url=url, file_path=path)
+    data = FileDataModel(file_name=name, file_format=fmt, file_base64=full_base64, file_raw=full_raw, file_url=url, file_path=path)
     results = FileModelResponse(uid=request.uid, sno=request.sno, code=code, messages=messages, extra=extra, data=data)
     results_log = copy.deepcopy(results)
     results_log.data.file_base64 = short_base64
@@ -191,9 +201,12 @@ def build_response(content, results, name, ext, return_stream):
     if return_stream:
         metadata_json = json.dumps(results.model_dump(), ensure_ascii=False)
         # import base64
-        # metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
+        metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
+        metadata_url = quote(metadata_json)
+        quoted_name = quote(name)
         media_type = "application/octet-stream" or get_mime_from_extension(ext)
-        headers = {"X-File-Metadata": metadata_json, "Content-Disposition": f'attachment; filename="{name}{ext}"'}
+        headers = {"X-File-Metadata": metadata_url, "Content-Disposition": f"attachment; filename=\"{name}\"; filename*=UTF-8''{quoted_name}"}
+        print(f'headers: {headers}')
         return StreamingResponse(content=content, media_type=media_type, headers=headers)
     else:
         return JSONResponse(status_code=200, content=results.model_dump())
