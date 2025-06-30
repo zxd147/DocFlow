@@ -95,12 +95,12 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
     return output_raw, output_stream
 
 async def convert_pdf_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    _, docx_stream = convert_pdf_to_docx(params)
+    _, docx_stream = await convert_pdf_to_docx(params)
     params = FileConvertParams(convert_type=params.convert_type, is_text=params.is_text, input_stream=docx_stream)
-    output_raw, output_stream = convert_docx_to_md_or_html(params)
+    output_raw, output_stream = await convert_docx_to_md_or_html(params)
     return output_raw, output_stream
 
-def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     convert_type, input_raw, input_stream = params.convert_type, params.input_raw, params.input_stream
     input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
     output_stream = StringIO() if params.is_text else BytesIO()
@@ -140,7 +140,7 @@ def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union
     output_stream = raw_to_stream(output_raw) if output_stream.getvalue() == "" else output_stream
     return output_raw, output_stream
 
-def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     convert_type = params.convert_type
     mid = MarkItDown()
     if "2md" not in convert_type:
@@ -155,7 +155,7 @@ def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, bytes], U
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
-def convert_html2md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_html2md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     if "v3" in params.convert_type:
         output_raw = Tomd(params.input_raw).markdown
         # output_raw = Tomd().convert(params.input_raw)
@@ -166,7 +166,7 @@ def convert_html2md(params: FileConvertParams) -> tuple[Union[str, bytes], Union
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
-def convert_md2html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_md2html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     if "v3" in params.convert_type:
         output_raw = mistune.markdown(params.input_raw)
     elif "v2" in params.convert_type:
