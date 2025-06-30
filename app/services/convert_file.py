@@ -1,6 +1,7 @@
 import os
 import subprocess
 from io import BytesIO, StringIO
+from string import Template
 from typing import Union
 
 import html2markdown
@@ -20,10 +21,22 @@ from tomd import Tomd
 from weasyprint import HTML
 
 from app.models.file_conversion import FileConvertParams
-from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, async_get_string_or_bytes_from_path
+from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, \
+    async_get_string_or_bytes_from_path
 from app.utils.logger import get_logger
 
 logger = get_logger()
+
+HTML_TEMPLATE = Template("""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Document</title>
+</head>
+<body>
+$body
+</body>
+</html>""")
 
 def remove_html_nested_tables(raw_html):
     soup = BeautifulSoup(raw_html, "html.parser")
@@ -40,7 +53,7 @@ def remove_html_nested_tables(raw_html):
     final_html = str(soup)
     return final_html
 
-def format_html(raw_html):
+def format_html(raw_html, return_img):
     # 包一层 <root> 保证是合法结构
     soup = BeautifulSoup(f"<root>{raw_html}</root>", "html.parser")
     # Step 1: 去掉表格中的 <p>，只保留内容
@@ -65,9 +78,14 @@ def format_html(raw_html):
                 lines.append(table_line)
             else:
                 lines.append(element_str)
+    if not return_img:
+        for img in soup.find_all("img"):
+            if img.get("src", "").startswith("data:image"):
+                img.decompose()  # 彻底移除图片节点
     # 拼接并保存
     final_html = "\n".join(lines)
-    return final_html
+    full_html = HTML_TEMPLATE.substitute(body=final_html)
+    return full_html
 
 async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     output_stream = BytesIO()
@@ -80,7 +98,7 @@ async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, byt
     return output_raw, output_stream
 
 async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    input_path, input_raw, input_stream = params.input_path, params.input_raw, params.input_stream
+    return_img, input_path, input_raw, input_stream = params.return_img, params.input_path, params.input_raw, params.input_stream
     input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
     if input_path and os.path.exists(input_path):
         with open(input_path, "rb") as docx_file:
@@ -89,12 +107,13 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
     if "2md" in params.convert_type:
         result = mammoth.convert_to_markdown(input_stream)
     else:
+        # result = mammoth.convert_to_html(input_stream, convert_image=mammoth.images.skip)
         result = mammoth.convert_to_html(input_stream)
     output_html = result.value
     output_html = output_html.replace('<table>', '<table border="1">')
     # 格式化处理
     clean_html = remove_html_nested_tables(output_html)
-    output_raw = format_html(clean_html)
+    output_raw = format_html(clean_html, return_img)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 

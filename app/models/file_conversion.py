@@ -20,6 +20,7 @@ class FileDataModel(BaseModel):
 class FileConvertParams:
     convert_type: str
     is_text: bool
+    return_img: bool = False
     input_path: str = ""
     input_raw: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
     input_stream: Optional[Union[str, bytes, TextIO, BinaryIO]] = None

@@ -56,7 +56,7 @@ excel_related_map = {
 }
 conversion_map.update(excel_related_map)
 
-async def handle_file_operation(request_model, file, mode, convert_type='') -> Union[JSONResponse, StreamingResponse]:
+async def handle_file_operation(request_model: FileModelRequest, file, mode, convert_type='') -> Union[JSONResponse, StreamingResponse]:
     try:
         logger.info(f"{mode.capitalize()} file request param: {request_model.model_dump()}.")
         raw, name, ext, size, info = await get_raw(request_model, mode=mode, file=file)
@@ -72,7 +72,8 @@ async def handle_file_operation(request_model, file, mode, convert_type='') -> U
             _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, raw, request_model.do_save, name, ext)
             url, path, name, ext = await get_convert_path_and_url(save_path, convert_type)
             is_text = is_text_file(path)
-            params = FileConvertParams(convert_type=convert_type, is_text=is_text, input_raw=raw, input_path=save_path, output_path=path)
+            return_img = request_model.extra.get("return_img",  False)
+            params = FileConvertParams(convert_type=convert_type, is_text=is_text, return_img=return_img, input_raw=raw, input_path=save_path, output_path=path)
             base_convert_type = convert_type.split("_", 1)[0]
             convert_raw, convert_stream = await conversion_map[base_convert_type](params)
             return_path = await async_save_string_or_bytes_to_path(convert_raw, path)
