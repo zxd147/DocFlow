@@ -205,8 +205,7 @@ def build_response(content, results, name, ext, return_stream):
         metadata_url = quote(metadata_json)
         quoted_name = quote(name)
         media_type = "application/octet-stream" or get_mime_from_extension(ext)
-        headers = {"X-File-Metadata": metadata_url, "Content-Disposition": f"attachment; filename=\"{name}\"; filename*=UTF-8''{quoted_name}"}
-        print(f'headers: {headers}')
+        headers = {"X-File-Metadata": metadata_url, "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_name}"}
         return StreamingResponse(content=content, media_type=media_type, headers=headers)
     else:
         return JSONResponse(status_code=200, content=results.model_dump())

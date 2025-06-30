@@ -66,7 +66,7 @@ def format_html(raw_html):
     return final_html
 
 async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    output_stream = StringIO() if params.is_text else BytesIO()
+    output_stream = BytesIO()
     logger.info(f"Converting pdf to docx...")
     cv = Converter(pdf_file=params.input_path, stream=params.input_raw)
     cv.convert(output_stream, start=0, end=None)
