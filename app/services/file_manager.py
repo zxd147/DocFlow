@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Union
 from urllib.parse import urlparse, unquote, quote
 
+import unicodedata
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -36,6 +37,7 @@ conversion_map = {
     "csv2md": convert_excel_and_markdown_or_html,
     "xls2md": convert_excel_and_markdown_or_html,
     "xlsx2md": convert_excel_and_markdown_or_html,
+    "csv2xlsx": convert_excel_and_markdown_or_html,
     # 其他...
 }
 
@@ -204,8 +206,9 @@ def build_response(content, results, name, ext, return_stream):
         metadata_b64 = base64.b64encode(metadata_json.encode()).decode()
         metadata_url = quote(metadata_json)
         quoted_name = quote(name)
+        ascii_safe_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
         media_type = "application/octet-stream" or get_mime_from_extension(ext)
-        headers = {"X-File-Metadata": metadata_url, "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_name}"}
+        headers = {"X-File-Metadata": metadata_url, "Content-Disposition": f'attachment; filename="{ascii_safe_name}"; filename*=UTF-8''{quoted_name}'}
         return StreamingResponse(content=content, media_type=media_type, headers=headers)
     else:
         return JSONResponse(status_code=200, content=results.model_dump())
