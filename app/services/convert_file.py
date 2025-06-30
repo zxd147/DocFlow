@@ -60,7 +60,12 @@ def format_html(raw_html, return_img):
     for p in soup.find_all("p"):
         if p.find_parent("td") or p.find_parent("th"):
             p.unwrap()  # 删除 <p> 标签但保留其中的文本
-    # Step 2: 按块分行，表格用 prettify，其他用 strip
+    # Step 2: 去除base64编码的图片
+    if not return_img:
+        for img in soup.find_all("img"):
+            if img.get("src", "").startswith("data:image"):
+                img.decompose()  # 彻底移除图片节点
+    # Step 3: 按块分行，表格用 prettify，其他用 strip
     lines = []
     for element in soup.root.contents:
         element_str = str(element).strip()
@@ -78,10 +83,6 @@ def format_html(raw_html, return_img):
                 lines.append(table_line)
             else:
                 lines.append(element_str)
-    if not return_img:
-        for img in soup.find_all("img"):
-            if img.get("src", "").startswith("data:image"):
-                img.decompose()  # 彻底移除图片节点
     # 拼接并保存
     final_html = "\n".join(lines)
     full_html = HTML_TEMPLATE.substitute(body=final_html)

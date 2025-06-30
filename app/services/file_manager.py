@@ -72,7 +72,7 @@ async def handle_file_operation(request_model: FileModelRequest, file, mode, con
             _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, raw, request_model.do_save, name, ext)
             url, path, name, ext = await get_convert_path_and_url(save_path, convert_type)
             is_text = is_text_file(path)
-            return_img = request_model.extra.get("return_img",  False)
+            return_img = request_model.return_base64
             params = FileConvertParams(convert_type=convert_type, is_text=is_text, return_img=return_img, input_raw=raw, input_path=save_path, output_path=path)
             base_convert_type = convert_type.split("_", 1)[0]
             convert_raw, convert_stream = await conversion_map[base_convert_type](params)
