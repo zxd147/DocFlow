@@ -23,11 +23,15 @@ class FileConvertParams:
     input_path: str = ""
     input_raw: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
     input_stream: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
+    output_path: str = ""
 
 class ConvertType(str, Enum):
     pdf2docx = "pdf2docx"
     docx2html = "docx2html"
     pdf2html = "pdf2html"
+    html2docx = "html2docx"
+    docx2pdf = "docx2pdf"
+    html2pdf = "html2pdf"
     csv2xlsx = "csv2xlsx"
     csv2html = "csv2html"
     csv2md = "csv2md"
@@ -40,6 +44,7 @@ class ConvertType(str, Enum):
     html2xlsx = "html2xlsx"
     html2csv = "html2csv"
     html2md = "html2md"
+    md2xlsx = "md2xlsx"
     md2html = "md2html"
     # 将来新增支持类型：md2html, xls2csv, 等等
 

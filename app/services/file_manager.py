@@ -17,8 +17,9 @@ from app.models.file_conversion import FileConvertParams
 from app.models.file_conversion import FileDataModel
 from app.models.request_model import FileModelRequest
 from app.models.response_model import FileModelResponse
-from app.services.convert_file import convert_pdf_to_docx, convert_docx_to_md_or_html, convert_pdf_to_md_or_html, \
-    convert_excel_and_markdown_or_html
+from app.services.convert_file import (convert_pdf_to_docx, convert_docx_to_md_or_html, convert_pdf_to_md_or_html,
+                                       convert_excel_and_markdown_or_html, convert_html_to_docx, convert_docx_to_pdf,
+                                       convert_html_to_pdf, convert_html_to_md, convert_md_to_html, convert_to_markdown)
 from app.utils.exception import file_exception
 from app.utils.file import (get_bytes_from_url, async_get_string_or_bytes_from_path, get_bytes_from_base64,
                             async_get_bytes_from_file,
@@ -29,17 +30,31 @@ from app.utils.file import (get_bytes_from_url, async_get_string_or_bytes_from_p
 from app.utils.logger import get_logger
 
 logger = get_logger()
-
 conversion_map = {
     "pdf2docx": convert_pdf_to_docx,
     "docx2html": convert_docx_to_md_or_html,
     "pdf2html": convert_pdf_to_md_or_html,
-    "csv2md": convert_excel_and_markdown_or_html,
-    "xls2md": convert_excel_and_markdown_or_html,
-    "xlsx2md": convert_excel_and_markdown_or_html,
-    "csv2xlsx": convert_excel_and_markdown_or_html,
-    # 其他...
+    "html2docx": convert_html_to_docx,
+    "docx2pdf": convert_docx_to_pdf,
+    "html2pdf": convert_html_to_pdf,
+    "html2md": convert_html_to_md,
+    "md2html": convert_md_to_html,
 }
+markitdown_supported_types = {
+    "pdf", "docx", "pptx", "xlsx", "xls", "csv", "html", "json",
+    "xml", "txt", "epub", "zip", "jpg", "jpeg", "png", "mp3", "wav", "url"
+}
+for ext in markitdown_supported_types:
+    conversion_map[f"{ext}2md"] = convert_to_markdown
+excel_related_map = {
+    k: convert_excel_and_markdown_or_html for k in [
+        "csv2xlsx", "csv2html", "csv2md",
+        "xls2xlsx", "xls2html", "xls2md",
+        "xlsx2csv", "xlsx2html", "xlsx2md",
+        "html2xlsx", "html2csv", "md2xlsx",
+    ]
+}
+conversion_map.update(excel_related_map)
 
 async def handle_file_operation(request_model, file, mode, convert_type='') -> Union[JSONResponse, StreamingResponse]:
     try:
@@ -57,8 +72,9 @@ async def handle_file_operation(request_model, file, mode, convert_type='') -> U
             _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, raw, request_model.do_save, name, ext)
             url, path, name, ext = await get_convert_path_and_url(save_path, convert_type)
             is_text = is_text_file(path)
-            params = FileConvertParams(convert_type=convert_type, is_text=is_text, input_raw=raw)
-            convert_raw, convert_stream = await conversion_map[convert_type](params)
+            params = FileConvertParams(convert_type=convert_type, is_text=is_text, input_raw=raw, input_path=save_path, output_path=path)
+            base_convert_type = convert_type.split("_", 1)[0]
+            convert_raw, convert_stream = await conversion_map[base_convert_type](params)
             return_path = await async_save_string_or_bytes_to_path(convert_raw, path)
             return_url, return_raw, return_stream = url, convert_raw, convert_stream
         elif mode == "download":
@@ -134,7 +150,7 @@ async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str
         url_split_name, url_split_ext = os.path.splitext(os.path.basename(url_path))
         source_name = split_name or url_split_name or uuid.uuid4().hex[:8]
         source_raw, _, file_extension = await get_bytes_from_url(data.file_url)
-        source_ext = data.file_format or split_ext or url_split_ext or file_extension or ".bin"
+        source_ext = data.file_format or split_ext or url_split_ext or file_extension or ".html"
         source_raw = binary_to_text(source_raw) if is_text_file(source_ext) else source_raw
         source_size = len(source_raw)
         source_info = f"Get File mode: url, Name: {source_name}, Extension: {source_ext}, Size: {source_size} bytes."

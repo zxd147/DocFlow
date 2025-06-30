@@ -386,7 +386,7 @@ async def async_save_string_or_bytes_to_path(raw: Union[bytes, str], path: str, 
     logger.info(f"Saved raw to file {path} successfully.")
     return path
 
-def save_bytes_or_string_to_path(raw: Union[bytes, str], path: str, encoding="utf-8") -> str:
+def save_string_or_bytes_to_path(raw: Union[bytes, str], path: str, encoding="utf-8") -> str:
     is_text = is_text_file(path)
     mode, coding = ("w", encoding) if is_text else ("wb", None)
     with open(path, mode, encoding=coding) as f:

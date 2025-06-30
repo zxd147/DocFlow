@@ -1,4 +1,5 @@
 import os
+import subprocess
 from io import BytesIO, StringIO
 from typing import Union
 
@@ -8,15 +9,18 @@ import mammoth
 import markdown as md
 import mistune
 import pandas as pd
+import pdfkit
 from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
+from html2docx import html2docx
 from markdown_it import MarkdownIt
 from markitdown import MarkItDown
 from pdf2docx import Converter
 from tomd import Tomd
+from weasyprint import HTML
 
 from app.models.file_conversion import FileConvertParams
-from app.utils.file import raw_to_stream, stream_to_raw, seek_stream
+from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, async_get_string_or_bytes_from_path
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -82,10 +86,10 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
         with open(input_path, "rb") as docx_file:
             input_stream = BytesIO(docx_file.read())
     logger.info(f"Converting docx to html or markdown: {params.convert_type}...")
-    if "html" in params.convert_type:
-        result = mammoth.convert_to_html(input_stream)
-    else:
+    if "2md" in params.convert_type:
         result = mammoth.convert_to_markdown(input_stream)
+    else:
+        result = mammoth.convert_to_html(input_stream)
     output_html = result.value
     output_html = output_html.replace('<table>', '<table border="1">')
     # 格式化处理
@@ -98,6 +102,43 @@ async def convert_pdf_to_md_or_html(params: FileConvertParams) -> tuple[Union[st
     _, docx_stream = await convert_pdf_to_docx(params)
     params = FileConvertParams(convert_type=params.convert_type, is_text=params.is_text, input_stream=docx_stream)
     output_raw, output_stream = await convert_docx_to_md_or_html(params)
+    return output_raw, output_stream
+
+async def convert_html_to_docx(params: FileConvertParams) -> tuple[bytes, BytesIO]:
+    input_raw = params.input_raw
+    logger.info("Converting html to docx...")
+    soup = BeautifulSoup(input_raw, "html.parser")
+    title = soup.title.string.strip() if soup.title and soup.title.string else "Untitled"
+    output_stream = html2docx(input_raw, title)
+    seek_stream(output_stream)
+    output_raw = stream_to_raw(output_stream)
+    return output_raw, output_stream
+
+async def convert_docx_to_pdf(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    input_path, input_raw, output_path = params.input_path, params.input_raw, params.output_path
+    if not os.path.exists(input_path):
+        await async_save_string_or_bytes_to_path(input_raw, input_path)
+    logger.info("Converting docx to pdf...")
+    if "v2" in params.convert_type:
+        subprocess.run(["pandoc", input_path, "-o", output_path], check=True)
+    else:
+        subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", os.path.dirname(output_path), input_path], check=True)
+    output_raw, _ = await async_get_string_or_bytes_from_path(output_path)
+    output_stream = raw_to_stream(output_raw)
+    return output_raw, output_stream
+
+async def convert_html_to_pdf(params: FileConvertParams) -> tuple[bytes, BytesIO]:
+    input_raw = params.input_raw
+    if "v2" in params.convert_type:
+        logger.info("Converting HTML to PDF using WeasyPrint...")
+        output_stream = BytesIO()
+        HTML(string=input_raw).write_pdf(output_stream)
+        seek_stream(output_stream)
+        output_raw = stream_to_raw(output_stream)
+    else:
+        logger.info("Converting HTML to PDF using Wkhtmltopdf...")
+        output_raw = pdfkit.from_string(input_raw, False)
+        output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
 async def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
@@ -155,7 +196,7 @@ async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, byt
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
-async def convert_html2md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_html_to_md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     if "v3" in params.convert_type:
         output_raw = Tomd(params.input_raw).markdown
         # output_raw = Tomd().convert(params.input_raw)
@@ -166,7 +207,7 @@ async def convert_html2md(params: FileConvertParams) -> tuple[Union[str, bytes],
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
-async def convert_md2html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     if "v3" in params.convert_type:
         output_raw = mistune.markdown(params.input_raw)
     elif "v2" in params.convert_type:
