@@ -53,7 +53,7 @@ def remove_html_nested_tables(raw_html):
     final_html = str(soup)
     return final_html
 
-def format_html(raw_html, return_img):
+def format_html(raw_html, remove_img):
     # 包一层 <root> 保证是合法结构
     soup = BeautifulSoup(f"<root>{raw_html}</root>", "html.parser")
     # Step 1: 去掉表格中的 <p>，只保留内容
@@ -61,7 +61,7 @@ def format_html(raw_html, return_img):
         if p.find_parent("td") or p.find_parent("th"):
             p.unwrap()  # 删除 <p> 标签但保留其中的文本
     # Step 2: 去除base64编码的图片
-    if not return_img:
+    if remove_img:
         for img in soup.find_all("img"):
             if img.get("src", "").startswith("data:image"):
                 img.decompose()  # 彻底移除图片节点
@@ -99,7 +99,7 @@ async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, byt
     return output_raw, output_stream
 
 async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    return_img, input_path, input_raw, input_stream = params.return_img, params.input_path, params.input_raw, params.input_stream
+    remove_img, input_path, input_raw, input_stream = params.extra.remove_img, params.input_path, params.input_raw, params.input_stream
     input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
     if input_path and os.path.exists(input_path):
         with open(input_path, "rb") as docx_file:
@@ -114,7 +114,7 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
     output_html = output_html.replace('<table>', '<table border="1">')
     # 格式化处理
     clean_html = remove_html_nested_tables(output_html)
-    output_raw = format_html(clean_html, return_img)
+    output_raw = format_html(clean_html, remove_img)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
@@ -165,7 +165,7 @@ async def convert_html_to_pdf(params: FileConvertParams) -> tuple[bytes, BytesIO
 async def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     convert_type, input_raw, input_stream = params.convert_type, params.input_raw, params.input_stream
     input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
-    output_stream = StringIO() if params.is_text else BytesIO()
+    output_stream = StringIO() if params.extra.is_text else BytesIO()
     dfs_dict, dfs = {}, []
     if "html2" in convert_type:
         dfs = pd.read_html(input_stream, encoding="utf-8")

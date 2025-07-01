@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Union, Optional, TextIO, BinaryIO
 
@@ -17,14 +19,24 @@ class FileDataModel(BaseModel):
         return not any([self.file_name, self.file_base64, self.file_raw, self.file_url, self.file_path])
 
 @dataclass
+class ConvertExtraParams:
+    is_text: bool = False
+    remove_img: bool = True
+
+@dataclass
 class FileConvertParams:
     convert_type: str
-    is_text: bool
-    return_img: bool = False
     input_path: str = ""
     input_raw: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
     input_stream: Optional[Union[str, bytes, TextIO, BinaryIO]] = None
     output_path: str = ""
+    extra: Optional[ConvertExtraParams] = field(default_factory=ConvertExtraParams)
+
+    @staticmethod
+    def from_dict(data: dict) -> FileConvertParams:
+        if isinstance(data.get("extra"), dict):
+            data["extra"] = ConvertExtraParams(**data["extra"])
+        return FileConvertParams(**data)
 
 class ConvertType(str, Enum):
     pdf2docx = "pdf2docx"
