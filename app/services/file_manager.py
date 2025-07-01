@@ -121,7 +121,7 @@ async def parse_file_request(request) -> FileModelRequest:
     if 'multipart/form-data' in request_content_type or 'application/x-www-form-urlencoded' in request_content_type:
         form_data = await request.form()
         form_dict = dict(form_data)
-        for key in ("extra",):  # 可以扩展多个需要反序列化的字段
+        for key in ("extra","data", ):  # 可以扩展多个需要反序列化的字段
             value = form_dict.get(key)
             if key in form_dict and isinstance(value, str) and value.strip().startswith("{") and value.strip().endswith("}"):
                 try:
