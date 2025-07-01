@@ -10,6 +10,7 @@ from typing import Union, BinaryIO, Tuple, TextIO
 from urllib.parse import unquote
 
 import aiofiles
+import chardet
 import httpx
 from fastapi import UploadFile, HTTPException
 
@@ -148,42 +149,35 @@ def get_mime_from_extension(extension: str) -> str:
 async def async_get_bytes_from_file(file: UploadFile, _=False) -> Tuple[bytes, int, str]:
     raw = await file.read()
     size = len(raw)
-    ext = get_extension_from_mime(file.content_type or "")
-    return raw, size, ext
+    extension = get_extension_from_mime(file.content_type or "")
+    return raw, size, extension
 
 def get_bytes_from_file(file: UploadFile, _=False) -> Tuple[bytes, int, str]:
     raw = file.file.read()  # 直接使用 `UploadFile` 的文件对象
     size = len(raw)
-    ext = get_extension_from_mime(file.content_type or "")
-    return raw, size, ext
+    extension = get_extension_from_mime(file.content_type or "")
+    return raw, size, extension
 
 def get_file_like_from_file(file: UploadFile, _=False) -> Tuple[BinaryIO, int, str]:
     stream = file.file  # 直接使用 `UploadFile` 的文件对象
     stream.seek(0, 2)  # 移动到文件末尾
     size = stream.tell()  # 获取当前位置，即文件大小
     stream.seek(0)  # 将指针重置到文件开头
-    ext = get_extension_from_mime(file.content_type or "")
-    return stream, size, ext
+    extension = get_extension_from_mime(file.content_type or "")
+    return stream, size, extension
 
-async def async_get_string_or_bytes_from_path(path: str, encoding="utf-8") -> Tuple[Union[str, bytes], int]:
+async def async_get_bytes_from_path(path: str) -> Tuple[Union[str, bytes], int]:
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
-    is_text = is_text_file(path)
-    if is_text:
-        async with aiofiles.open(path, "r", encoding=encoding) as f:
-            raw = await f.read()
-    else:
-        async with aiofiles.open(path, "rb") as f:
-            raw = await f.read()
+    async with aiofiles.open(path, "rb") as f:
+        raw = await f.read()
     size = len(raw)
     return raw, size
 
-def get_string_or_bytes_from_path(path: str, encoding="utf-8") -> Tuple[Union[str, bytes], int]:
+def get_bytes_from_path(path: str) -> Tuple[Union[str, bytes], int]:
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
-    is_text = is_text_file(path)
-    mode = "b" if is_text else "rb"
-    with open(path, mode, encoding=encoding) as f:
+    with open(path, "rb") as f:
         raw = f.read()
     size = len(raw)
     return raw, size
@@ -195,24 +189,24 @@ async def get_bytes_from_url(url: str) -> Tuple[bytes, int, str]:
         raw = response.content  # 直接使用 `httpx.Response` 的内容对象
         content_type = response.headers.get("content-type", "")
     size = len(raw)
-    ext = get_extension_from_mime(content_type)
-    return raw, size, ext
+    extension = get_extension_from_mime(content_type)
+    return raw, size, extension
 
 def get_bytes_from_base64(base64_str: str) -> Tuple[bytes, int, str]:
-    ext = ''
+    extension = ''
     if base64_str.startswith("data:"):
         # 使用正则表达式提取文件格式
         match = re.match(r'data:(.*?);base64,(.*)', base64_str)
         if match:
             content_type = match.group(1)
-            ext = get_extension_from_mime(content_type)
+            extension = get_extension_from_mime(content_type)
             base64_str = match.group(2)
     raw = base64.b64decode(base64_str)
     size = len(raw)
-    return raw, size, ext
+    return raw, size, extension
 
 def is_text_file(path: str) -> bool:
-    return any(path.lower().endswith(ext) for ext in text_extensions)
+    return any(path.lower().endswith(extension) for extension in text_extensions)
 
 def is_stream(obj: Union[TextIO, BinaryIO]) -> bool:
     return hasattr(obj, "read") and callable(getattr(obj, "read", None))
@@ -230,10 +224,27 @@ def read_stream(obj: Union[TextIO, BinaryIO]) -> Union[str, bytes]:
     return raw
 
 def encode_string(string: str, encoding="utf-8") -> bytes:
-    return string.encode(encoding)
+    default_encodings = ['utf-8', 'gbk', 'gb2312', 'latin1']
+    encodings = [encoding]
+    encodings.extend(default_encodings)
+    for enc in encodings:
+        try:
+            return string.encode(enc)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("Failed to decode data with available encodings.")
 
 def decode_bytes(byte: bytes, encoding="utf-8") -> str:
-    return byte.decode(encoding)
+    default_encodings = ['utf-8', 'gbk', 'gb2312', 'latin1']
+    chardet_encoding = chardet.detect(byte)['encoding'] or encoding
+    encodings = [encoding] if chardet_encoding == encoding else [chardet_encoding, encoding]
+    encodings.extend(default_encodings)
+    for enc in encodings:
+        try:
+            return byte.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("Failed to decode data with available encodings.")
 
 def encode_stringio(stringio: StringIO, encoding="utf-8") -> BytesIO:
     return wrap_bytes(encode_string(unwrap_stringio(stringio), encoding))
@@ -374,26 +385,28 @@ def ensure_bytesio(obj: Union[str, bytes, TextIO, BinaryIO], encoding="utf-8") -
 
 async def async_save_string_or_bytes_to_path(raw: Union[bytes, str], path: str, encoding="utf-8") -> str:
     # os.makedirs(os.path.dirname(path), exist_ok=True)  # 不自动创建目录，避免因传参错误而意外生成无效目录结构
+    encoding = chardet.detect(raw)['encoding'] or encoding if isinstance(raw, bytes) else encoding
     if not isinstance(raw, (str, bytes)):
         raise TypeError(f"Unsupported raw type: {type(raw)}. Must be str or bytes.")
-    is_text = is_text_file(path)
-    if is_text:
+    if is_text_file(path):
         async with aiofiles.open(path, "w", encoding=encoding) as f:
-            await f.write(raw if isinstance(raw, str) else raw.decode(encoding))
+            await f.write(binary_to_text(raw, encoding))
     else:
         async with aiofiles.open(path, "wb") as f:
-            await f.write(raw.encode(encoding) if isinstance(raw, str) else raw)
+            await f.write(text_to_binary(raw, encoding))
     logger.info(f"Saved raw to file {path} successfully.")
     return path
 
 def save_string_or_bytes_to_path(raw: Union[bytes, str], path: str, encoding="utf-8") -> str:
+    # os.makedirs(os.path.dirname(path), exist_ok=True)  # 不自动创建目录，避免因传参错误而意外生成无效目录结构
     is_text = is_text_file(path)
-    mode, coding = ("w", encoding) if is_text else ("wb", None)
-    with open(path, mode, encoding=coding) as f:
+    mode = "w" if is_text else "wb"
+    encoding = chardet.detect(raw)['encoding'] or encoding if isinstance(raw, bytes) else encoding
+    with open(path, mode, encoding=encoding) as f:
         if isinstance(raw, str):
-            f.write(raw if is_text else raw.encode(encoding))
+            f.write(raw if is_text else text_to_binary(raw, encoding))
         elif isinstance(raw, bytes):
-            f.write(raw.decode(encoding) if is_text else raw)
+            f.write(binary_to_text(raw, encoding) if is_text else raw)
         else:
             raise TypeError(f"Unsupported raw type: {type(raw)}. Must be str or bytes.")
     logger.info(f"Saved raw to {path} successfully.")

@@ -21,8 +21,7 @@ from tomd import Tomd
 from weasyprint import HTML
 
 from app.models.file_conversion import FileConvertParams
-from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, \
-    async_get_string_or_bytes_from_path
+from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, async_get_bytes_from_path
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -144,7 +143,7 @@ async def convert_docx_to_pdf(params: FileConvertParams) -> tuple[Union[str, byt
         subprocess.run(["pandoc", input_path, "-o", output_path], check=True)
     else:
         subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", os.path.dirname(output_path), input_path], check=True)
-    output_raw, _ = await async_get_string_or_bytes_from_path(output_path)
+    output_raw, _ = await async_get_bytes_from_path(output_path)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
@@ -207,9 +206,9 @@ async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, byt
     mid = MarkItDown()
     if "2md" not in convert_type:
         raise ValueError("Only *2md conversions are supported with MarkItDown.")
-    ext = convert_type.replace("2md", "").lower()
+    extension = convert_type.replace("2md", "").lower()
     # 安全性和鲁棒性检查
-    if ext not in {"pdf", "docx", "pptx", "xlsx", "xls", "csv", "html", "json", "xml", "txt",
+    if extension not in {"pdf", "docx", "pptx", "xlsx", "xls", "csv", "html", "json", "xml", "txt",
                    "epub", "zip", "jpg", "jpeg", "png", "mp3", "wav", "url"}:
         raise ValueError(f"Unsupported convert_type: {convert_type}")
     result = mid.convert(params.input_raw)  # 直接传入路径或 URL

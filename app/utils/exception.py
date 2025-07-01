@@ -15,32 +15,43 @@ def llm_exception(exc):
     caller_frame = inspect.stack()[1]
     caller_name = caller_frame.function
     exc_type = type(exc).__name__
+    code, status = -1, 500
     if isinstance(exc, json.JSONDecodeError):
         error_msg = (
             f"JSON解析失败: {exc.msg}\n"
             f"错误位置: 第{exc.lineno}行第{exc.colno}列 (字符{exc.pos})\n"
             f"原始数据: [{exc.doc}]"  # 这里会输出原始 JSON 字符串
         )
-        logger.error(f"{caller_name}: {exc_type}: {error_msg}")
+        message = f"{caller_name}: {exc_type}: {error_msg}"
     else:
-        logger.error(f"{caller_name}: HTTP错误: {exc_type}: {exc}")
+        message = f"{caller_name}: {exc_type}: {exc}"
+        logger.error(message)
+    return code, status, message
 
 def single_exception(exc):
+    # 获取调用栈信息（跳过当前帧）
+    status = 500
     if isinstance(exc, SigIntException):
-        logger.info(f"SigIntException occurred: {str(exc)}")
+        message = f"SigIntException occurred: {str(exc)}"
         graceful_shutdown(signal.SIGINT)
+        code = 0
     elif isinstance(exc, SigTermException):
-        logger.info(f"SigTermException occurred: {str(exc)}")
+        message = f"SigTermException occurred: {str(exc)}"
         graceful_shutdown(signal.SIGTERM)
+        code = 0
     elif isinstance(exc, ShutdownSignalException):
-        logger.warning(f"ShutdownSignalException occurred: {str(exc)}")
+        message = f"ShutdownSignalException occurred: {str(exc)}"
         graceful_shutdown()
+        code = 1
     elif isinstance(exc, asyncio.CancelledError):
-        logger.warning(f"Task cancelled successfully: {str(exc)}")
+        message = f"Task cancelled successfully: {str(exc)}"
         graceful_shutdown()
+        code = 1
     else:
-        logger.warning(f"OtherError occurred: {str(exc)}")
+        message = f"OtherError occurred: {str(exc)}"
         graceful_shutdown()
+        code = -1
+    return code, status, message
 
 def file_exception(exc):
     # 获取调用栈信息（跳过当前帧）
@@ -57,16 +68,13 @@ def file_exception(exc):
         )
         message = f"{caller_name}: {exc_type}: {error_msg}"
         status = 400
-        return code, status, message
     elif isinstance(exc, ValueError):
         status = 400
-        return code, status, message
     elif isinstance(exc, TimeoutError):
         status = 408
-        return code, status, message
     else:
         status = 500
-        return code, status, message
+    return code, status, message
 
 
 
