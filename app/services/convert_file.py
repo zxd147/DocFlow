@@ -120,7 +120,8 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
 
 async def convert_pdf_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     _, docx_stream = await convert_pdf_to_docx(params)
-    params = FileConvertParams(convert_type=params.convert_type, is_text=params.is_text, input_stream=docx_stream)
+    params.input_stream = docx_stream
+    params.input_path = ''
     output_raw, output_stream = await convert_docx_to_md_or_html(params)
     return output_raw, output_stream
 

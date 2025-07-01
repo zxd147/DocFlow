@@ -72,7 +72,7 @@ async def handle_file_operation(request_model: FileModelRequest, file, mode, con
             _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, raw, request_model.do_save, name, ext)
             url, path, name, ext = await get_convert_path_and_url(save_path, convert_type)
             is_text = is_text_file(path)
-            return_img = request_model.return_base64
+            return_img = request_model.extra.get("return_img", False)
             params = FileConvertParams(convert_type=convert_type, is_text=is_text, return_img=return_img, input_raw=raw, input_path=save_path, output_path=path)
             base_convert_type = convert_type.split("_", 1)[0]
             convert_raw, convert_stream = await conversion_map[base_convert_type](params)
@@ -124,7 +124,15 @@ async def parse_file_request(request) -> FileModelRequest:
     request_content_type = request.headers.get('content-type', '')
     if 'multipart/form-data' in request_content_type or 'application/x-www-form-urlencoded' in request_content_type:
         form_data = await request.form()
-        request_data = FileModelRequest(**form_data)
+        form_dict = dict(form_data)
+        for key in ("extra",):  # 可以扩展多个需要反序列化的字段
+            value = form_dict.get(key)
+            if key in form_dict and isinstance(value, str) and value.strip().startswith("{") and value.strip().endswith("}"):
+                try:
+                    form_dict[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    raise HTTPException(status_code=400, detail=f"Invalid JSON in 【'{key}': '{value}'】 field")
+        request_data = FileModelRequest(**form_dict)
     elif "application/json" in request_content_type:
         json_data = await request.json()
         request_data = FileModelRequest(**json_data)
