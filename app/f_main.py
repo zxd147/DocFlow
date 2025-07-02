@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Path, Depends
+from fastapi import FastAPI, HTTPException, Path, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,22 +31,24 @@ app = create_app()
 @app.get("/static/protected/{file_path:path}")
 async def protected_static(file_path: str, _: None = Depends(bearer_auth_dependency)):
     protected_dir = Path(settings.protected_manager_dir).resolve()
-    file_path = (protected_dir / file_path).resolve()
-    if not str(file_path).startswith(str(protected_dir)) or not file_path.is_file():
+    protected_file_path = (protected_dir / file_path).resolve()
+    try:
+        protected_file_path.relative_to(protected_dir)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access outside permitted directory is forbidden")
+    if not protected_file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(path=file_path)
+    return FileResponse(path=protected_file_path)
 
-@app.get("/")
-async def index():
+@app.api_route("/", methods=["GET", "POST"])
+async def index(request: Request):
     """前端页面入口"""
-    index_html = "app/static/index.html"
-    return FileResponse(index_html)
-
-@app.post("/")
-async def index():
-    """前端页面入口"""
-    index_data = {"message": "OpenAPI is running..."}
-    return JSONResponse(content=index_data, status_code=200)
+    if request.method == "GET":
+        index_html = "app/static/index.html"
+        return FileResponse(index_html)
+    elif request.method == "POST":
+        index_data = {"message": "OpenAPI is running..."}
+        return JSONResponse(content=index_data, status_code=200)
 
 @app.get("/favicon.ico")
 async def favicon():
