@@ -8,6 +8,8 @@ import html2markdown
 import html2text
 import mammoth
 import markdown as md
+import marko
+import commonmark
 import mistune
 import pandas as pd
 import pdfkit
@@ -15,13 +17,15 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
 from html2docx import html2docx
 from markdown_it import MarkdownIt
+from markdownify import markdownify
 from markitdown import MarkItDown
 from pdf2docx import Converter
 from tomd import Tomd
 from weasyprint import HTML
 
 from app.models.file_conversion import FileConvertParams
-from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, async_get_bytes_from_path
+from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, \
+    async_get_bytes_from_path, text_to_binary
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -203,7 +207,6 @@ async def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple
 
 async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     convert_type = params.convert_type
-    mid = MarkItDown()
     if "2md" not in convert_type:
         raise ValueError("Only *2md conversions are supported with MarkItDown.")
     extension = convert_type.replace("2md", "").lower()
@@ -211,24 +214,34 @@ async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, byt
     if extension not in {"pdf", "docx", "pptx", "xlsx", "xls", "csv", "html", "json", "xml", "txt",
                    "epub", "zip", "jpg", "jpeg", "png", "mp3", "wav", "url"}:
         raise ValueError(f"Unsupported convert_type: {convert_type}")
-    result = mid.convert(params.input_raw)  # 直接传入路径或 URL
+    input_stream = raw_to_stream(text_to_binary(params.input_raw))
+    result = MarkItDown().convert(input_stream)  # str, path (str or Path), url, requests.Response, BinaryIO
     output_raw = result.text_content
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
 async def convert_html_to_md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    if "v3" in params.convert_type:
+    if "v4" in params.convert_type:
+        output_raw = html2markdown.convert(params.input_raw)
+    elif "v3" in params.convert_type:
         output_raw = Tomd(params.input_raw).markdown
         # output_raw = Tomd().convert(params.input_raw)
     elif "v2" in params.convert_type:
         output_raw = html2text.html2text(params.input_raw)
     else:
-        output_raw = html2markdown.convert(params.input_raw)
+        output_raw = markdownify(params.input_raw)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
 async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    if "v3" in params.convert_type:
+    if "v5" in params.convert_type:
+        parser = commonmark.Parser()
+        renderer = commonmark.HtmlRenderer()
+        ast = parser.parse(params.input_raw)
+        output_raw = renderer.render(ast)
+    elif "v4" in params.convert_type:
+        output_raw = marko.convert(params.input_raw)
+    elif "v3" in params.convert_type:
         output_raw = mistune.markdown(params.input_raw)
     elif "v2" in params.convert_type:
         output_raw = md.markdown(params.input_raw)

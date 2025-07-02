@@ -37,8 +37,8 @@ conversion_map = {
     "html2docx": convert_html_to_docx,
     "docx2pdf": convert_docx_to_pdf,
     "html2pdf": convert_html_to_pdf,
-    "html2md": convert_html_to_md,
-    "md2html": convert_md_to_html,
+    # "html2md": convert_html_to_md,
+    # "md2html": convert_md_to_html,
 }
 markitdown_supported_types = {
     "pdf", "docx", "pptx", "xlsx", "xls", "csv", "html", "json",
@@ -46,6 +46,8 @@ markitdown_supported_types = {
 }
 for ext in markitdown_supported_types:
     conversion_map[f"{ext}2md"] = convert_to_markdown
+conversion_map["html2md"] = convert_html_to_md
+conversion_map["md2html"] = convert_md_to_html
 excel_related_map = {
     k: convert_excel_and_markdown_or_html for k in [
         "csv2xlsx", "csv2html", "csv2md",
