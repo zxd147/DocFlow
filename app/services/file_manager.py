@@ -81,7 +81,7 @@ async def handle_file_operation(request_model: FileModelRequest, file, mode, con
             return_url, return_raw, return_stream = url, convert_raw, convert_stream
         elif mode == "download":
             return_url = request_model.data.file_url
-            return_path = request_model.data.file_payh
+            return_path = request_model.data.file_path
             if return_url and return_url.startswith(settings.protected_manager_url):
                 return_url = return_url.replace(settings.protected_manager_url, settings.public_manager_url)
                 copy_file(return_path, return_path)
