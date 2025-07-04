@@ -421,7 +421,7 @@ def convert_bytes_to_base64(raw: Union[str, bytes], extension, encoding="utf-8")
     base64_str = f'{base64_head},{base64_data}'
     return base64_str
 
-def local_path_to_url(path: str, base_dir: str, base_url: str) -> str:
+def local_path_to_url(path: str, base_url: str, base_dir: str) -> str:
     if not path:
         return ""
     base_dir = Path(base_dir).resolve()
@@ -434,7 +434,7 @@ def local_path_to_url(path: str, base_dir: str, base_url: str) -> str:
     full_url = f"{base_url.rstrip('/')}/{relative_path.as_posix()}"
     return full_url
 
-def url_to_local_path(url: str, base_dir: str, base_url: str) -> str:
+def url_to_local_path(url: str, base_url: str, base_dir: str) -> str:
     if not url:
         return ""
     if not url.startswith(base_url):

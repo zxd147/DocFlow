@@ -22,11 +22,9 @@ from app.services.convert_file import (convert_pdf_to_docx, convert_docx_to_md_o
                                        convert_html_to_pdf, convert_html_to_md, convert_md_to_html, convert_to_markdown)
 from app.utils.exception import file_exception
 from app.utils.file import (get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_base64,
-                            async_get_bytes_from_file,
-                            get_mime_from_extension, local_path_to_url, add_timestamp_to_filepath,
-                            convert_bytes_to_base64, async_save_string_or_bytes_to_path,
-                            get_full_path, get_short_data, copy_file, binary_to_text, is_text_file, text_to_binary,
-                            raw_to_stream)
+                            async_get_bytes_from_file, get_mime_from_extension, local_path_to_url, url_to_local_path,
+                            add_timestamp_to_filepath, convert_bytes_to_base64, async_save_string_or_bytes_to_path,
+                            get_full_path, get_short_data, copy_file, binary_to_text, is_text_file, text_to_binary, raw_to_stream)
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -80,14 +78,19 @@ async def handle_file_operation(request_model: FileModelRequest, file, mode, con
             return_path = await async_save_string_or_bytes_to_path(convert_raw, path)
             return_url, return_raw, return_stream = url, convert_raw, convert_stream
         elif mode == "download":
-            return_url = request_model.data.file_url
-            return_path = request_model.data.file_path
-            if return_url and return_url.startswith(settings.protected_manager_url):
-                return_url = return_url.replace(settings.protected_manager_url, settings.public_manager_url)
-                copy_file(return_path, return_path)
-            elif return_path and return_path.startswith(settings.public_manager_dir):
-                return_path = return_path.replace(settings.protected_manager_dir, settings.public_manager_dir)
-                copy_file(return_path, return_path)
+            save_url = request_model.data.file_url
+            save_path = request_model.data.file_path
+            if not all([save_url, save_path]):
+                raise ValueError("No valid file url or file path found.")
+            elif save_url and save_url.startswith(settings.protected_manager_url):
+                save_path = url_to_local_path(save_url, settings.protected_manager_url, settings.protected_manager_dir)
+            if save_path.startswith(settings.protected_manager_dir):
+                return_path = save_path.replace(settings.protected_manager_dir, settings.public_manager_dir)
+                copy_file(save_path, return_path)
+                return_url = local_path_to_url(return_path, settings.public_manager_url, settings.public_manager_dir)
+            else:
+                return_path = save_path
+                return_url = save_url
             return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         elif mode == "extract":
             return_url, return_path = "", ""
@@ -198,7 +201,7 @@ async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str
 async def save_file_and_get_url(path, directory, raw, do_save, name, extension):
     st_fmt = "full" if do_save else "null"
     save_path = get_full_path(directory, path, name, extension, st_fmt)
-    save_url = local_path_to_url(save_path, settings.static_root, settings.static_url) \
+    save_url = local_path_to_url(save_path, settings.static_url, settings.static_root) \
         if save_path and save_path.startswith(settings.static_root) else ''
     save_path = await async_save_string_or_bytes_to_path(raw, save_path) if do_save else save_path
     return save_url, save_path
@@ -211,7 +214,7 @@ async def get_convert_path_and_url(path, convert_type):
     ext_path = Path(path).with_suffix(f".{dst_ext}")
     ts_path = Path(add_timestamp_to_filepath(str(ext_path), fmt='minute'))
     convert_name, convert_ext, convert_path = ts_path.stem, ts_path.suffix, str(ts_path)
-    convert_url = local_path_to_url(convert_path, settings.static_root, settings.static_url) \
+    convert_url = local_path_to_url(convert_path, settings.static_url, settings.static_root) \
         if convert_path.startswith(settings.static_root) else ''
     return convert_url, convert_path, convert_name, convert_ext
 
