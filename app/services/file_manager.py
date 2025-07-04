@@ -80,7 +80,7 @@ async def handle_file_operation(request_model: FileModelRequest, file, mode, con
         elif mode == "download":
             save_url = request_model.data.file_url
             save_path = request_model.data.file_path
-            if not all([save_url, save_path]):
+            if not any([save_url, save_path]):
                 raise ValueError("No valid file url or file path found.")
             elif save_url and save_url.startswith(settings.protected_manager_url):
                 save_path = url_to_local_path(save_url, settings.protected_manager_url, settings.protected_manager_dir)
