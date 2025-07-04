@@ -17,8 +17,9 @@ async def upload_file(request: Request, file: Optional[UploadFile] = File(None))
     return response
 
 @router.post("/download_file")
-async def download_file(request: FileModelRequest):
-    response = await handle_file_operation(request, file=None, mode="download")
+async def download_file(request: Request, file: Optional[UploadFile] = File(None)):
+    request = await parse_file_request(request)
+    response = await handle_file_operation(request, file=file, mode="download")
     return response
 
 @router.post("/convert_file/{convert_type}")
