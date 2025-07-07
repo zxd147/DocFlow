@@ -56,6 +56,7 @@ class ConvertType(str, Enum):
     xlsx2md = "xlsx2md"
     html2xlsx = "html2xlsx"
     html2csv = "html2csv"
+    html2html = "html2html"
     html2md = "html2md"
     md2xlsx = "md2xlsx"
     md2html = "md2html"

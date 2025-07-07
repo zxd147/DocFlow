@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <script>window.currentUser = "web-user-from-env";</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>广州融杰报告审查系统</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="icon" href="data:,">
+  <style>
+    html,
+    body {
+      height: 100vh;
+      margin: 0;
+      font-family: 'Roboto', sans-serif;
+      background: #f4f4f4;
+      color: #222;
+      overflow: hidden;
+    }
+    .header {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 700;
+      padding: 2rem 1rem 1rem;
+      color: #111;
+    }
+    .container {
+      display: flex;
+      max-width: 1200px;
+      margin: auto;
+      padding: 1rem;
+      gap: 2rem;
+      height: calc(100vh - 100px);
+      overflow: auto;
+    }
+    .panel {
+      flex: 1;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 600px;
+    }
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #111;
+    }
+    .upload-btn,
+    .submit-btn,
+    .download-btn {
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.75rem;
+      font-size: 1rem;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.2s;
+    }
+    .upload-btn:disabled,
+    .submit-btn:disabled {
+      background: #999;
+      cursor: not-allowed;
+    }
+    .file-label {
+      font-size: 0.9rem;
+      color: #666;
+      text-align: center;
+    }
+    textarea {
+      width: 100%;
+      padding: 0.75rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      resize: vertical;
+      min-height: 100px;
+    }
+    .output-box {
+      height: 400px;
+      background: #fafafa;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 1.25rem;
+      font-size: 1rem;
+      line-height: 1.6;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .output-controls {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      margin-top: 1rem;
+      gap: 8px;
+    }
+    .spinner {
+      margin-left: 0.5rem;
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid #ccc;
+      border-top-color: #111;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    @media (max-width: 900px) {
+      .container {
+        flex-direction: column;
+      }
+      .panel {
+        min-height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">广州融杰报告审查系统</div>
+  <div class="container">
+    <div class="panel">
+      <div>
+        <div class="section-title">规则库</div>
+        <input type="file" id="ruleFile" hidden />
+        <button class="upload-btn" onclick="ruleFile.click()">上传规则</button>
+        <div class="file-label" id="ruleFileLabel"></div>
+      </div>
+      <div>
+        <div class="section-title">检测单</div>
+        <input type="file" id="detectFile" hidden accept=".pdf" />
+        <button class="upload-btn" onclick="detectFile.click()">上传检测单</button>
+        <div class="file-label" id="detectFileLabel"></div>
+      </div>
+      <div>
+        <label class="section-title" for="userInput">附加信息</label>
+        <textarea
+          id="userInput"
+          placeholder="请输入附加信息，可留空..."
+        ></textarea>
+      </div>
+      <button class="submit-btn" id="submitBtn" disabled>提交审查</button>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">审查报告输出</div>
+      <div class="output-box" id="outputBox">等待提交审查后显示内容...</div>
+      <div class="output-controls">
+        <button class="download-btn" onclick="downloadOutput()">导出报告</button>
+        <button class="download-btn" onclick="copyOutput()">复制结果</button>
+        <div id="loadingSpinner" class="spinner" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const uploadURL = 'http://172.16.10.27/v1/files/upload';
+    const chatURL = 'http://172.16.10.27/v1/chat-messages';
+    const API_KEY = 'app-4b5So4JYt6WKiFAZvIxzvbkI';
+    const ruleFile = document.getElementById('ruleFile');
+
+    const currentUser = window.currentUser || "default-user";
+    const detectFile = document.getElementById('detectFile');
+    const ruleFileLabel = document.getElementById('ruleFileLabel');
+    const detectFileLabel = document.getElementById('detectFileLabel');
+    const submitBtn = document.getElementById('submitBtn');
+    const outputBox = document.getElementById('outputBox');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+
+    let ruleFileId = null;
+    let detectFileId = null;
+
+    ruleFile.onchange = () =>
+      handleFileUpload(ruleFile, ruleFileLabel, (id) => {
+        ruleFileId = id;
+        checkReady();
+      });
+
+    detectFile.onchange = () =>
+      handleFileUpload(detectFile, detectFileLabel, (id) => {
+        detectFileId = id;
+        checkReady();
+      });
+
+    function handleFileUpload(input, label, callback) {
+      const file = input.files[0];
+      if (!file) return;
+      if (
+        input.id === 'detectFile' &&
+        file.type !== 'application/pdf' &&
+        !file.name.toLowerCase().endsWith('.pdf')
+      ){
+        label.textContent = '仅支持上传 PDF 文件';
+        return;
+      }
+      label.textContent = `上传中：${file.name}`;
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('user', currentUser);
+      fetch(uploadURL, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + API_KEY },
+        body: formData,
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.id) {
+            label.textContent = `已上传：${file.name}`;
+            callback(data.id);
+          } else {
+            label.textContent = '上传失败';
+          }
+        })
+        .catch((err) => {
+          label.textContent = '上传失败';
+          console.error('上传出错:', err);
+        });
+    }
+
+    function checkReady() {
+      submitBtn.disabled = !(ruleFileId && detectFileId);
+    }
+
+    submitBtn.onclick = async () => {
+      let query = document.getElementById('userInput').value.trim() || '开始'; // 默认值 '开始'
+      outputBox.textContent = '';
+      loadingSpinner.style.display = 'inline-block';
+      submitBtn.disabled = true;
+      const body = {
+        query: query,
+        user: currentUser,
+        inputs: {
+          rule_file: {
+            type: 'document',
+            transfer_method: 'local_file',
+            upload_file_id: ruleFileId,
+          },
+        },
+        response_mode: 'streaming',
+        conversation_id: '',
+        files: {
+          type: 'document',
+          transfer_method: 'local_file',
+          upload_file_id: ruleFileId,
+        },
+      };
+      try {
+        const res = await fetch(chatURL, {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + API_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          for (let line of lines) {
+            if (line.trim()) {
+              try {
+                const json = JSON.parse(line);
+                if (json.answer) outputBox.textContent += json.answer;
+              } catch (e) {
+                outputBox.textContent += line;
+              }
+            }
+          }
+        }
+        if (buffer.trim()) outputBox.textContent += buffer;
+      } catch (err) {
+        outputBox.textContent = '发生错误：' + err.message;
+      } finally {
+        submitBtn.disabled = false;
+        loadingSpinner.style.display = 'none';
+      }
+    };
+
+    function downloadOutput() {
+      const text = outputBox.textContent;
+      const blob = new Blob([text], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '审查报告.txt';
+      a.click();
+    }
+
+    function copyOutput() {
+      const text = outputBox.textContent;
+      if (!text) {
+        alert('没有内容可复制');
+        return;
+      }
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          alert('内容已复制到剪贴板');
+        })
+        .catch(() => {
+          alert('复制失败，请手动复制');
+        });
+    }
+  </script>
+</body>
+</html>

@@ -53,10 +53,15 @@ def remove_html_nested_tables(raw_html):
             text = table.get_text(strip=True)  # separator=" ",
             # text = text.replace("\n", " ").replace("  ", " ")
             table.replace_with(NavigableString(text))
+        else:
+            # 非嵌套表格 → 设置 border 属性（如未设置）
+            if not table.has_attr("border"):
+                table["border"] = "1"
     final_html = str(soup)
     return final_html
 
 def format_html(raw_html, remove_img):
+    """格式化 HTML，包括去嵌套表格、去 <p>、加 border 等"""
     # 包一层 <root> 保证是合法结构
     soup = BeautifulSoup(f"<root>{raw_html}</root>", "html.parser")
     # Step 1: 去掉表格中的 <p>，只保留内容
@@ -68,7 +73,7 @@ def format_html(raw_html, remove_img):
         for img in soup.find_all("img"):
             if img.get("src", "").startswith("data:image"):
                 img.decompose()  # 彻底移除图片节点
-    # Step 3: 按块分行，表格用 prettify，其他用 strip
+    # Step 3:  遍历每个顶层元素，处理为独立块，按块分行，表格用 prettify，其他用 strip
     lines = []
     for element in soup.root.contents:
         element_str = str(element).strip()
@@ -77,13 +82,21 @@ def format_html(raw_html, remove_img):
                 # 处理表格，合并每个 <tr> 成一行
                 # lines.append(element.prettify())  # 直接多行展开
                 # 处理表格，合并每个 <tr> 成一行
-                table_attrs = " ".join([f'{k}="{v}"' for k, v in element.attrs.items()])
-                table_line = f"<table {table_attrs}>".strip()
-                for tr in element.find_all("tr", recursive=False):
-                    tr_html = "".join([str(td).strip() for td in tr.find_all(["td", "th"], recursive=False)])
-                    table_line += f"\n<tr>{tr_html}</tr>"
-                table_line += "\n</table>"
-                lines.append(table_line)
+                if element.find_parent("table"):
+                    # 嵌套表格 → 转为纯文本
+                    text = element.get_text(strip=True)
+                    lines.append(text)
+                else:
+                    # 非嵌套表格 → 构造行合并结构，并加 border
+                    if not element.has_attr("border"):
+                        element["border"] = "1"
+                    table_attrs = " ".join([f'{k}="{v}"' for k, v in element.attrs.items()])
+                    table_line = f"<table {table_attrs}>".strip()
+                    for tr in element.find_all("tr", recursive=False):
+                        tr_html = "".join([str(td).strip() for td in tr.find_all(["td", "th"], recursive=False)])
+                        table_line += f"\n<tr>{tr_html}</tr>"
+                    table_line += "\n</table>"
+                    lines.append(table_line)
             else:
                 lines.append(element_str)
     # 拼接并保存
@@ -113,11 +126,9 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
     else:
         # result = mammoth.convert_to_html(input_stream, convert_image=mammoth.images.skip)
         result = mammoth.convert_to_html(input_stream)
-    output_html = result.value
-    output_html = output_html.replace('<table>', '<table border="1">')
+    result_raw = result.value
     # 格式化处理
-    clean_html = remove_html_nested_tables(output_html)
-    output_raw = format_html(clean_html, remove_img)
+    output_raw = format_html(result_raw, remove_img) if "2md" not in params.convert_type else result_raw
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
@@ -247,6 +258,11 @@ async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, byte
         output_raw = md.markdown(params.input_raw)
     else:
         output_raw = MarkdownIt().render(params.input_raw)
+    output_stream = raw_to_stream(output_raw)
+    return output_raw, output_stream
+
+async def convert_html_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    output_raw = format_html(params.input_raw, params.extra.remove_img)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 

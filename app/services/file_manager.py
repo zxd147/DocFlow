@@ -3,12 +3,12 @@ import copy
 import json
 import os
 import traceback
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Union
 from urllib.parse import urlparse, unquote, quote
 
-import unicodedata
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -18,13 +18,15 @@ from app.models.file_conversion import FileDataModel
 from app.models.request_model import FileModelRequest
 from app.models.response_model import FileModelResponse
 from app.services.convert_file import (convert_pdf_to_docx, convert_docx_to_md_or_html, convert_pdf_to_md_or_html,
-                                       convert_excel_and_markdown_or_html, convert_html_to_docx, convert_docx_to_pdf,
-                                       convert_html_to_pdf, convert_html_to_md, convert_md_to_html, convert_to_markdown)
+                                       convert_html_to_docx,
+                                       convert_docx_to_pdf, convert_html_to_pdf, convert_excel_and_markdown_or_html,
+                                       convert_html_to_html, convert_html_to_md, convert_md_to_html,
+                                       convert_to_markdown)
 from app.utils.exception import file_exception
-from app.utils.file import (get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_base64,
-                            async_get_bytes_from_file, get_mime_from_extension, local_path_to_url, url_to_local_path,
-                            add_timestamp_to_filepath, convert_bytes_to_base64, async_save_string_or_bytes_to_path,
-                            get_full_path, get_short_data, copy_file, binary_to_text, is_text_file, text_to_binary, raw_to_stream)
+from app.utils.file import (async_get_bytes_from_file, get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_base64,
+                            get_full_path, add_timestamp_to_filepath, local_path_to_url, url_to_local_path,
+                            convert_bytes_to_base64, async_save_string_or_bytes_to_path,get_short_data, copy_file,
+                            binary_to_text, is_text_file, text_to_binary, get_mime_from_extension, raw_to_stream)
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -44,6 +46,7 @@ markitdown_supported_types = {
 }
 for ext in markitdown_supported_types:
     conversion_map[f"{ext}2md"] = convert_to_markdown
+conversion_map["html2html"] = convert_html_to_html
 conversion_map["html2md"] = convert_html_to_md
 conversion_map["md2html"] = convert_md_to_html
 excel_related_map = {
