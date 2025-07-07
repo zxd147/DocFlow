@@ -30,7 +30,7 @@ app = create_app()
 
 @app.get("/static/protected/{file_path:path}")
 async def protected_static(file_path: str, _: None = Depends(bearer_auth_dependency)):
-    protected_dir = Path(settings.protected_manager_dir).resolve()
+    protected_dir = (Path(settings.static_dir) / "protected").resolve()
     protected_file_path = (protected_dir / file_path).resolve()
     try:
         protected_file_path.relative_to(protected_dir)
@@ -79,4 +79,7 @@ async def monitor_system_status():
 if __name__ == "__main__":
     host = settings.host
     port = settings.port
-    uvicorn.run("app.f_main:app", host=host, port=port, reload=True)
+    # uvicorn.run("app.f_main:app", host=host, port=port, reload=True)
+    uvicorn.run("app.f_main:app", host=host, port=port)
+
+

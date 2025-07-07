@@ -14,6 +14,7 @@ import chardet
 import httpx
 from fastapi import UploadFile, HTTPException
 
+from app.core.configs.settings import settings
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -136,6 +137,12 @@ def add_timestamp_to_filepath(path: str, fmt: str = "null") -> str:
     new_name = f"{p.stem}[{timestamp_str}]{p.suffix}"
     new_path = str(p.with_name(new_name))
     return new_path
+
+def gen_resource_locations(level: str = "public", resource: str = "files", category: str = "manager") -> tuple[str, str]:
+    static_dir, static_url = settings.static_root, settings.static_url.rstrip("/")
+    resource_path = os.path.join(static_dir, level, resource, category)
+    resource_url = f"{static_url}/{level}/{resource}/{category}"
+    return resource_path, resource_url
 
 def get_extension_from_mime(content_type: str) -> str:
     extension = mime_extension_map.get(content_type) or mimetypes.guess_extension(content_type, strict=False) or ""

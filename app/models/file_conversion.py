@@ -21,7 +21,9 @@ class FileDataModel(BaseModel):
 @dataclass
 class ConvertExtraParams:
     is_text: bool = False
-    remove_img: bool = True
+    img_category: str = "knowledgebase"
+    project_name: str = ""
+    img_policy: str = "remove"
 
 @dataclass
 class FileConvertParams:

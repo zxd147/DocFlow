@@ -54,13 +54,7 @@ class Settings(BaseSettings):
     database_url: str
 
     static_root: str
-    protected_manager_dir: str
-    public_manager_dir: str
-    temp_manager_dir: str
     static_url: str
-    protected_manager_url: str
-    public_manager_url: str
-    temp_manager_url: str
 
     @field_validator("cors_origins", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:

@@ -23,10 +23,12 @@ from app.services.convert_file import (convert_pdf_to_docx, convert_docx_to_md_o
                                        convert_html_to_html, convert_html_to_md, convert_md_to_html,
                                        convert_to_markdown)
 from app.utils.exception import file_exception
-from app.utils.file import (async_get_bytes_from_file, get_bytes_from_url, async_get_bytes_from_path, get_bytes_from_base64,
+from app.utils.file import (async_get_bytes_from_file, get_bytes_from_url, async_get_bytes_from_path,
+                            get_bytes_from_base64,
                             get_full_path, add_timestamp_to_filepath, local_path_to_url, url_to_local_path,
-                            convert_bytes_to_base64, async_save_string_or_bytes_to_path,get_short_data, copy_file,
-                            binary_to_text, is_text_file, text_to_binary, get_mime_from_extension, raw_to_stream)
+                            convert_bytes_to_base64, async_save_string_or_bytes_to_path, get_short_data, copy_file,
+                            binary_to_text, is_text_file, text_to_binary, get_mime_from_extension, raw_to_stream,
+                            gen_resource_locations)
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -65,13 +67,16 @@ async def handle_file_operation(request_model: FileModelRequest, file, mode, con
         raw, name, extension, size, info = await get_raw(request_model, mode=mode, file=file)
         logger.info(info)
         extra, code = request_model.extra, 0
+        file_category =extra.get("file_category", "manager")
+        protected_dir, protected_url = gen_resource_locations("protected", "files", "manager")
+        public_dir, public_url = gen_resource_locations("public", "files", "manager")
         if not raw:
             raise ValueError("No valid file raw found.")
         if mode == "upload":
-            return_url, return_path = await save_file_and_get_url(request_model.data.file_path, settings.protected_manager_dir, raw, request_model.do_save, name, extension)
+            return_url, return_path = await save_file_and_get_url(request_model.data.file_path, protected_dir, raw, request_model.do_save, name, extension)
             return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         elif mode == "convert":
-            _, save_path = await save_file_and_get_url(request_model.data.file_path, settings.public_manager_dir, raw, request_model.do_save, name, extension)
+            _, save_path = await save_file_and_get_url(request_model.data.file_path, public_dir, raw, request_model.do_save, name, extension)
             url, path, name, extension = await get_convert_path_and_url(save_path, convert_type)
             extra["is_text"] = is_text_file(path)
             params_dict = {"convert_type": convert_type, "input_raw": raw, "input_path": save_path, "output_path": path, "extra": extra}
@@ -85,12 +90,12 @@ async def handle_file_operation(request_model: FileModelRequest, file, mode, con
             save_path = request_model.data.file_path
             if not any([save_url, save_path]):
                 raise ValueError("No valid file url or file path found.")
-            elif save_url and save_url.startswith(settings.protected_manager_url):
-                save_path = url_to_local_path(save_url, settings.protected_manager_url, settings.protected_manager_dir)
-            if save_path.startswith(settings.protected_manager_dir):
-                return_path = save_path.replace(settings.protected_manager_dir, settings.public_manager_dir)
+            elif save_url and save_url.startswith(protected_url):
+                save_path = url_to_local_path(save_url, protected_url, protected_dir)
+            if save_path.startswith(protected_dir):
+                return_path = save_path.replace(protected_dir, public_dir)
                 copy_file(save_path, return_path)
-                return_url = local_path_to_url(return_path, settings.public_manager_url, settings.public_manager_dir)
+                return_url = local_path_to_url(return_path, public_url, public_dir)
             else:
                 return_path = save_path
                 return_url = save_url
@@ -146,6 +151,8 @@ async def parse_file_request(request) -> FileModelRequest:
 
 async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str, int, str]:
     data = request_data.data
+    file_category = request_data.extra.get("file_category", "manager")
+    temp_dir = os.path.join(settings.static_root, 'temp', 'files', file_category)
     split_name, split_ext = os.path.splitext(data.file_name or "")
     if data.is_empty() and not file:
             raise HTTPException(status_code=400, detail=f"Missing file information, data.is_empty: {request_data.data.is_empty()} and not file: {not file}.")
@@ -184,7 +191,7 @@ async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str
         path_split_name, path_split_ext = os.path.splitext(os.path.basename(data.file_path))
         source_name = split_name or path_split_name or uuid.uuid4().hex[:8]
         source_ext = data.file_format or split_ext or  path_split_ext or ".bin"
-        file_path = get_full_path(settings.public_manager_dir, data.file_path, source_name, source_ext)
+        file_path = get_full_path(temp_dir, data.file_path, source_name, source_ext)
         source_raw, _ = await async_get_bytes_from_path(file_path)
         source_raw = binary_to_text(source_raw) if is_text_file(source_ext) else source_raw
         source_size = len(source_raw)
@@ -192,7 +199,7 @@ async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str
     elif data.file_name and mode != "upload":
         source_name = split_name or uuid.uuid4().hex[:8]
         source_ext = data.file_format or split_ext or ""
-        file_path = os.path.join(settings.temp_manager_dir, f"{source_name}{source_ext}")
+        file_path = os.path.join(temp_dir, f"{source_name}{source_ext}")
         source_raw, _ = await async_get_bytes_from_path(file_path)
         source_raw = binary_to_text(source_raw) if is_text_file(source_ext) else source_raw
         source_size = len(source_raw)

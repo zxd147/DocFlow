@@ -41,26 +41,26 @@ $body
 </body>
 </html>""")
 
-def remove_html_nested_tables(raw_html):
-    soup = BeautifulSoup(raw_html, "html.parser")
-    # 找出所有 table
-    all_tables = soup.find_all("table")
-    for table in all_tables:
-        # 如果 table 有父级是 table，则为嵌套
-        if table.find_parent("table"):
-            # 用 table 的 children 直接替换整个 table 标签
-            # table.unwrap()  # unwrap 会移除标签但保留内容
-            text = table.get_text(strip=True)  # separator=" ",
-            # text = text.replace("\n", " ").replace("  ", " ")
-            table.replace_with(NavigableString(text))
-        else:
-            # 非嵌套表格 → 设置 border 属性（如未设置）
-            if not table.has_attr("border"):
-                table["border"] = "1"
-    final_html = str(soup)
-    return final_html
+# def remove_html_nested_tables(raw_html):
+#     soup = BeautifulSoup(raw_html, "html.parser")
+#     # 找出所有 table
+#     all_tables = soup.find_all("table")
+#     for table in all_tables:
+#         # 如果 table 有父级是 table，则为嵌套
+#         if table.find_parent("table"):
+#             # 用 table 的 children 直接替换整个 table 标签
+#             # table.unwrap()  # unwrap 会移除标签但保留内容
+#             text = table.get_text(strip=True)  # separator=" ",
+#             # text = text.replace("\n", " ").replace("  ", " ")
+#             table.replace_with(NavigableString(text))
+#         else:
+#             # 非嵌套表格 → 设置 border 属性（如未设置）
+#             if not table.has_attr("border"):
+#                 table["border"] = "1"
+#     final_html = str(soup)
+#     return final_html
 
-def format_html(raw_html, remove_img):
+def format_html(raw_html, img_policy):
     """格式化 HTML，包括去嵌套表格、去 <p>、加 border 等"""
     # 包一层 <root> 保证是合法结构
     soup = BeautifulSoup(f"<root>{raw_html}</root>", "html.parser")
@@ -69,7 +69,7 @@ def format_html(raw_html, remove_img):
         if p.find_parent("td") or p.find_parent("th"):
             p.unwrap()  # 删除 <p> 标签但保留其中的文本
     # Step 2: 去除base64编码的图片
-    if remove_img:
+    if img_policy == 'remove':
         for img in soup.find_all("img"):
             if img.get("src", "").startswith("data:image"):
                 img.decompose()  # 彻底移除图片节点
@@ -115,7 +115,7 @@ async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, byt
     return output_raw, output_stream
 
 async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    remove_img, input_path, input_raw, input_stream = params.extra.remove_img, params.input_path, params.input_raw, params.input_stream
+    input_path, input_raw, input_stream = params.input_path, params.input_raw, params.input_stream
     input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
     if input_path and os.path.exists(input_path):
         with open(input_path, "rb") as docx_file:
@@ -128,7 +128,7 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
         result = mammoth.convert_to_html(input_stream)
     result_raw = result.value
     # 格式化处理
-    output_raw = format_html(result_raw, remove_img) if "2md" not in params.convert_type else result_raw
+    output_raw = format_html(result_raw, params.extra.img_policy) if "2md" not in params.convert_type else result_raw
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
@@ -262,7 +262,7 @@ async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, byte
     return output_raw, output_stream
 
 async def convert_html_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    output_raw = format_html(params.input_raw, params.extra.remove_img)
+    output_raw = format_html(params.input_raw, params.extra.img_policy)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
