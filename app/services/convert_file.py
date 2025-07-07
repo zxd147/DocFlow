@@ -4,17 +4,17 @@ from io import BytesIO, StringIO
 from string import Template
 from typing import Union
 
+import commonmark
 import html2markdown
 import html2text
 import mammoth
 import markdown as md
 import marko
-import commonmark
 import mistune
 import pandas as pd
 import pdfkit
 from bs4 import BeautifulSoup
-from bs4.element import Tag, NavigableString
+from bs4.element import Tag
 from html2docx import html2docx
 from markdown_it import MarkdownIt
 from markdownify import markdownify
@@ -23,9 +23,10 @@ from pdf2docx import Converter
 from tomd import Tomd
 from weasyprint import HTML
 
+from app.core.configs.settings import settings
 from app.models.file_conversion import FileConvertParams
 from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, \
-    async_get_bytes_from_path, text_to_binary
+    async_get_bytes_from_path, text_to_binary, gen_resource_locations, get_bytes_from_base64, local_path_to_url
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -41,7 +42,7 @@ $body
 </body>
 </html>""")
 
-# def remove_html_nested_tables(raw_html):
+# async def remove_html_nested_tables(raw_html):
 #     soup = BeautifulSoup(raw_html, "html.parser")
 #     # 找出所有 table
 #     all_tables = soup.find_all("table")
@@ -52,6 +53,7 @@ $body
 #             # table.unwrap()  # unwrap 会移除标签但保留内容
 #             text = table.get_text(strip=True)  # separator=" ",
 #             # text = text.replace("\n", " ").replace("  ", " ")
+#             from bs4.element import NavigableString
 #             table.replace_with(NavigableString(text))
 #         else:
 #             # 非嵌套表格 → 设置 border 属性（如未设置）
@@ -60,7 +62,7 @@ $body
 #     final_html = str(soup)
 #     return final_html
 
-def format_html(raw_html, img_policy):
+async def format_html(raw_html, policy, images_dir):
     """格式化 HTML，包括去嵌套表格、去 <p>、加 border 等"""
     # 包一层 <root> 保证是合法结构
     soup = BeautifulSoup(f"<root>{raw_html}</root>", "html.parser")
@@ -69,10 +71,30 @@ def format_html(raw_html, img_policy):
         if p.find_parent("td") or p.find_parent("th"):
             p.unwrap()  # 删除 <p> 标签但保留其中的文本
     # Step 2: 去除base64编码的图片
-    if img_policy == 'remove':
-        for img in soup.find_all("img"):
-            if img.get("src", "").startswith("data:image"):
+    for img in soup.find_all("img"):
+        src = img.get("src", "")
+        if src.startswith("data:image"):
+            if policy == 'remove':
                 img.decompose()  # 彻底移除图片节点
+            elif policy == 'base64':
+                pass
+            else:
+                import hashlib
+                from pathlib import Path
+                image_raw, _, image_ext = get_bytes_from_base64(src)
+                ext = image_ext or '.jpg'
+                hash_name = hashlib.md5(image_raw).hexdigest()
+                save_path = Path(images_dir) / f"{hash_name}{ext}"
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                save_path = str(save_path).replace("\\", "/")
+                await async_save_string_or_bytes_to_path(image_raw, save_path)
+                img["alt"] = f"image_{hash_name}"
+                if policy == 'path':
+                    img["src"] = save_path
+                elif policy == 'url':
+                    save_url = local_path_to_url(save_path, settings.static_url, settings.static_root)
+                    img["src"] = save_url
+
     # Step 3:  遍历每个顶层元素，处理为独立块，按块分行，表格用 prettify，其他用 strip
     lines = []
     for element in soup.root.contents:
@@ -116,6 +138,7 @@ async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, byt
 
 async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     input_path, input_raw, input_stream = params.input_path, params.input_raw, params.input_stream
+    images_dir = os.path.join(gen_resource_locations("publib", "images", params.extra.category)[0], params.extra.name)
     input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
     if input_path and os.path.exists(input_path):
         with open(input_path, "rb") as docx_file:
@@ -128,7 +151,7 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
         result = mammoth.convert_to_html(input_stream)
     result_raw = result.value
     # 格式化处理
-    output_raw = format_html(result_raw, params.extra.img_policy) if "2md" not in params.convert_type else result_raw
+    output_raw = await format_html(result_raw, params.extra.policy, images_dir) if "2md" not in params.convert_type else result_raw
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
@@ -262,7 +285,8 @@ async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, byte
     return output_raw, output_stream
 
 async def convert_html_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    output_raw = format_html(params.input_raw, params.extra.img_policy)
+    images_dir = os.path.join(gen_resource_locations("publib", "images", params.extra.category)[0], params.extra.name)
+    output_raw = await format_html(params.input_raw, params.extra.policy, images_dir)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 

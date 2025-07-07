@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union, Optional, TextIO, BinaryIO
+from typing import Union, Optional, TextIO, BinaryIO, Literal
 
 from pydantic import BaseModel
 
@@ -18,12 +18,14 @@ class FileDataModel(BaseModel):
     def is_empty(self) -> bool:
         return not any([self.file_name, self.file_base64, self.file_raw, self.file_url, self.file_path])
 
+Policy = Literal["remove", "url", "path", "base64"]
+
 @dataclass
 class ConvertExtraParams:
     is_text: bool = False
-    img_category: str = "knowledgebase"
-    project_name: str = ""
-    img_policy: str = "remove"
+    policy: Policy = "url"
+    category: str = "knowledgebase"
+    name: str = "AI"
 
 @dataclass
 class FileConvertParams:
