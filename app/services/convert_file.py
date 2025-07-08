@@ -219,7 +219,9 @@ async def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple
     if "2html" in convert_type:
         html_blocks = [df.to_html(index=False, border=1) for df in dfs]
         parts = [f"<h2>{name}</h2><br>\n{html}" for name, html in zip(sheet_names, html_blocks)]
-        output_raw = "<br><hr><br>".join(parts)
+        result_raw = "<br><hr><br>".join(parts)
+        images_dir = os.path.join(gen_resource_locations("publib", "images", params.extra.category)[0], params.extra.name)
+        output_raw = await format_html(result_raw, params.extra.policy, images_dir)
     elif "2md" in convert_type:
         md_blocks = [df.to_markdown(index=False) for df in dfs]
         parts = [f"## {name}\n\n{markdown}" for name, markdown in zip(sheet_names, md_blocks)]
@@ -281,6 +283,8 @@ async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, byte
         output_raw = md.markdown(params.input_raw)
     else:
         output_raw = MarkdownIt().render(params.input_raw)
+    images_dir = os.path.join(gen_resource_locations("publib", "images", params.extra.category)[0], params.extra.name)
+    output_raw = await format_html(output_raw, params.extra.policy, images_dir)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
 
