@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 from io import BytesIO, StringIO
 from string import Template
@@ -125,6 +126,31 @@ async def format_html(raw_html, policy, images_dir):
     final_html = "\n".join(lines)
     full_html = HTML_TEMPLATE.substitute(body=final_html)
     return full_html
+
+async def strip_markdown(text: str) -> str:
+    # 1. 去除标题符号（如 # 一级标题）
+    text = re.sub(r'(^|\n)#{1,6}\s+', r'\1', text)
+    # 2. 图片语法：![alt](url) -> alt url
+    text = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'\1 \2', text)
+    # 3. 链接语法：[text](url) -> text url
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 \2', text)
+    # 4. 加粗/斜体处理
+    text = re.sub(r'\*\*\*(.*?)\*\*\*', r'\1', text)
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    # 5. 行内代码
+    text = re.sub(r'`([^`]*)`', r'\1', text)
+    # 6. 无序列表前缀
+    text = re.sub(r'^[\*\-\+] +', '', text, flags=re.MULTILINE)
+    # 7. 删除表格分隔线
+    text = re.sub(r'^\|? *[-| ]+ *\|?$', '', text, flags=re.MULTILINE)
+    # 8. 表格竖线 -> 空格
+    text = re.sub(r'\|', ' ', text)
+    # 9. 压缩空行
+    text = re.sub(r'\n{2,}', '\n', text)
+    # 10. 去首尾空白
+    text = text.strip()
+    return text
 
 async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     output_stream = BytesIO()
@@ -293,5 +319,19 @@ async def convert_html_to_html(params: FileConvertParams) -> tuple[Union[str, by
     output_raw = await format_html(params.input_raw, params.extra.policy, images_dir)
     output_stream = raw_to_stream(output_raw)
     return output_raw, output_stream
+
+async def convert_md_to_txt(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    # markdown转为纯文本，使用正则表达式清除 Markdown 标记
+    output_raw = await strip_markdown(params.input_raw)
+    output_stream = raw_to_stream(output_raw)
+    return output_raw, output_stream
+
+async def convert_html_to_txt(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+    # html转纯文本, 	用 BeautifulSoup 的 get_text() 方法,彻底清除无标记
+    soup = BeautifulSoup(params.input_raw, "html.parser")
+    output_raw = soup.get_text(separator="\n")  # type: ignore
+    output_stream = raw_to_stream(output_raw)
+    return output_raw, output_stream
+
 
 
