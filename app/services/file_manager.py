@@ -17,51 +17,21 @@ from app.models.file_conversion import FileConvertParams
 from app.models.file_conversion import FileDataModel
 from app.models.request_model import FileModelRequest
 from app.models.response_model import FileModelResponse
-from app.services.convert_file import (convert_pdf_to_docx, convert_docx_to_md_or_html, convert_pdf_to_md_or_html,
-                                       convert_html_to_docx,
-                                       convert_docx_to_pdf, convert_html_to_pdf, convert_excel_and_markdown_or_html,
-                                       convert_html_to_html, convert_html_to_md, convert_md_to_html,
-                                       convert_to_markdown)
 from app.utils.exception import file_exception
 from app.utils.file import (async_get_bytes_from_file, get_bytes_from_url, async_get_bytes_from_path,
                             get_bytes_from_base64, get_full_path, add_timestamp_to_filepath, local_path_to_url,
                             url_to_local_path, convert_bytes_to_base64, async_save_string_or_bytes_to_path,
                             get_short_data, copy_file, binary_to_text, is_text_file, text_to_binary,
                             get_mime_from_extension, raw_to_stream, gen_resource_locations)
+from app.utils.func_map import get_file_conversion
 from app.utils.logger import get_logger
 
 logger = get_logger()
-conversion_map = {
-    "pdf2docx": convert_pdf_to_docx,
-    "docx2html": convert_docx_to_md_or_html,
-    "pdf2html": convert_pdf_to_md_or_html,
-    "html2docx": convert_html_to_docx,
-    "docx2pdf": convert_docx_to_pdf,
-    "html2pdf": convert_html_to_pdf,
-}
-markitdown_supported_types = {
-    "pdf", "docx", "pptx", "xlsx", "xls", "csv", "html", "json",
-    "xml", "txt", "epub", "zip", "jpg", "jpeg", "png", "mp3", "wav", "url"
-}
-for ext in markitdown_supported_types:
-    conversion_map[f"{ext}2md"] = convert_to_markdown
-conversion_map["html2html"] = convert_html_to_html
-conversion_map["html2md"] = convert_html_to_md
-conversion_map["md2html"] = convert_md_to_html
-excel_related_map = {
-    k: convert_excel_and_markdown_or_html for k in [
-        "csv2xlsx", "csv2html", "csv2md",
-        "xls2xlsx", "xls2html", "xls2md",
-        "xlsx2csv", "xlsx2html", "xlsx2md",
-        "html2xlsx", "html2csv", "md2xlsx",
-    ]
-}
-conversion_map.update(excel_related_map)
-
 
 def get_converter(convert_type):
     if "aspose" in convert_type:
         pass
+    conversion_map = get_file_conversion()
     base_convert_type = convert_type.lower().split("_", 1)[0]
     converter = conversion_map.get(base_convert_type)
     if converter is None:
@@ -159,7 +129,8 @@ async def parse_file_request(request) -> FileModelRequest:
 async def get_raw(request_data, mode, file) -> tuple[Union[str, bytes], str, str, int, str]:
     data = request_data.data
     category = request_data.extra.get("category", "manager")
-    temp_dir = os.path.join(settings.static_root, 'temp', 'files', category)
+    static_root: str = settings.static_root
+    temp_dir = os.path.join(static_root, 'temp', 'files', category)
     split_name, split_ext = os.path.splitext(data.file_name or "")
     if data.is_empty() and not file:
             raise HTTPException(status_code=400, detail=f"Missing file information, data.is_empty: {request_data.data.is_empty()} and not file: {not file}.")

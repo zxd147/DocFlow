@@ -1,8 +1,6 @@
 import os
-import re
 import subprocess
 from io import BytesIO, StringIO
-from string import Template
 from typing import Union
 
 import commonmark
@@ -15,7 +13,6 @@ import mistune
 import pandas as pd
 import pdfkit
 from bs4 import BeautifulSoup
-from bs4.element import Tag
 from html2docx import html2docx
 from markdown_it import MarkdownIt
 from markdownify import markdownify
@@ -24,133 +21,14 @@ from pdf2docx import Converter
 from tomd import Tomd
 from weasyprint import HTML
 
-from app.core.configs.settings import settings
 from app.models.file_conversion import FileConvertParams
 from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, \
-    async_get_bytes_from_path, text_to_binary, gen_resource_locations, get_bytes_from_base64, local_path_to_url
+    async_get_bytes_from_path, text_to_binary, gen_resource_locations
+from app.utils.filetypes import markitdown_input_types
 from app.utils.logger import get_logger
+from app.utils.text import strip_markdown, format_html
 
 logger = get_logger()
-
-HTML_TEMPLATE = Template("""<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Document</title>
-</head>
-<body>
-$body
-</body>
-</html>""")
-
-# async def remove_html_nested_tables(raw_html):
-#     soup = BeautifulSoup(raw_html, "html.parser")
-#     # 找出所有 table
-#     all_tables = soup.find_all("table")
-#     for table in all_tables:
-#         # 如果 table 有父级是 table，则为嵌套
-#         if table.find_parent("table"):
-#             # 用 table 的 children 直接替换整个 table 标签
-#             # table.unwrap()  # unwrap 会移除标签但保留内容
-#             text = table.get_text(strip=True)  # separator=" ",
-#             # text = text.replace("\n", " ").replace("  ", " ")
-#             from bs4.element import NavigableString
-#             table.replace_with(NavigableString(text))
-#         else:
-#             # 非嵌套表格 → 设置 border 属性（如未设置）
-#             if not table.has_attr("border"):
-#                 table["border"] = "1"
-#     final_html = str(soup)
-#     return final_html
-
-async def format_html(raw_html, policy, images_dir):
-    """格式化 HTML，包括去嵌套表格、去 <p>、加 border 等"""
-    # 包一层 <root> 保证是合法结构
-    soup = BeautifulSoup(f"<root>{raw_html}</root>", "html.parser")
-    # Step 1: 去掉表格中的 <p>，只保留内容
-    for p in soup.find_all("p"):
-        if p.find_parent("td") or p.find_parent("th"):
-            p.unwrap()  # 删除 <p> 标签但保留其中的文本
-    # Step 2: 去除base64编码的图片
-    for img in soup.find_all("img"):
-        src = img.get("src", "")
-        if src.startswith("data:image"):
-            if policy == 'remove':
-                img.decompose()  # 彻底移除图片节点
-            elif policy == 'base64':
-                pass
-            else:
-                import hashlib
-                from pathlib import Path
-                image_raw, _, image_ext = get_bytes_from_base64(src)
-                ext = image_ext or '.jpg'
-                hash_name = hashlib.md5(image_raw).hexdigest()
-                save_path = Path(images_dir) / f"{hash_name}{ext}"
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-                save_path = str(save_path).replace("\\", "/")
-                await async_save_string_or_bytes_to_path(image_raw, save_path)
-                img["alt"] = f"image_{hash_name}"
-                if policy == 'path':
-                    img["src"] = save_path
-                elif policy == 'url':
-                    save_url = local_path_to_url(save_path, settings.static_url, settings.static_root)
-                    img["src"] = save_url
-
-    # Step 3:  遍历每个顶层元素，处理为独立块，按块分行，表格用 prettify，其他用 strip
-    lines = []
-    for element in soup.root.contents:
-        element_str = str(element).strip()
-        if isinstance(element, Tag) and element_str:  # 只处理标签（Tag），跳过字符串
-            if element.name == "table":
-                # 处理表格，合并每个 <tr> 成一行
-                # lines.append(element.prettify())  # 直接多行展开
-                # 处理表格，合并每个 <tr> 成一行
-                if element.find_parent("table"):
-                    # 嵌套表格 → 转为纯文本
-                    text = element.get_text(strip=True)
-                    lines.append(text)
-                else:
-                    # 非嵌套表格 → 构造行合并结构，并加 border
-                    if not element.has_attr("border"):
-                        element["border"] = "1"
-                    table_attrs = " ".join([f'{k}="{v}"' for k, v in element.attrs.items()])
-                    table_line = f"<table {table_attrs}>".strip()
-                    for tr in element.find_all("tr", recursive=False):
-                        tr_html = "".join([str(td).strip() for td in tr.find_all(["td", "th"], recursive=False)])
-                        table_line += f"\n<tr>{tr_html}</tr>"
-                    table_line += "\n</table>"
-                    lines.append(table_line)
-            else:
-                lines.append(element_str)
-    # 拼接并保存
-    final_html = "\n".join(lines)
-    full_html = HTML_TEMPLATE.substitute(body=final_html)
-    return full_html
-
-async def strip_markdown(text: str) -> str:
-    # 1. 去除标题符号（如 # 一级标题）
-    text = re.sub(r'(^|\n)#{1,6}\s+', r'\1', text)
-    # 2. 图片语法：![alt](url) -> alt url
-    text = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'\1 \2', text)
-    # 3. 链接语法：[text](url) -> text url
-    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 \2', text)
-    # 4. 加粗/斜体处理
-    text = re.sub(r'\*\*\*(.*?)\*\*\*', r'\1', text)
-    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-    text = re.sub(r'\*(.*?)\*', r'\1', text)
-    # 5. 行内代码
-    text = re.sub(r'`([^`]*)`', r'\1', text)
-    # 6. 无序列表前缀
-    text = re.sub(r'^[\*\-\+] +', '', text, flags=re.MULTILINE)
-    # 7. 删除表格分隔线
-    text = re.sub(r'^\|? *[-| ]+ *\|?$', '', text, flags=re.MULTILINE)
-    # 8. 表格竖线 -> 空格
-    text = re.sub(r'\|', ' ', text)
-    # 9. 压缩空行
-    text = re.sub(r'\n{2,}', '\n', text)
-    # 10. 去首尾空白
-    text = text.strip()
-    return text
 
 async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
     output_stream = BytesIO()
@@ -273,8 +151,7 @@ async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, byt
         raise ValueError("Only *2md conversions are supported with MarkItDown.")
     extension = convert_type.replace("2md", "").lower()
     # 安全性和鲁棒性检查
-    if extension not in {"pdf", "docx", "pptx", "xlsx", "xls", "csv", "html", "json", "xml", "txt",
-                   "epub", "zip", "jpg", "jpeg", "png", "mp3", "wav", "url"}:
+    if extension not in markitdown_input_types:
         raise ValueError(f"Unsupported convert_type: {convert_type}")
     input_stream = raw_to_stream(text_to_binary(params.input_raw))
     result = MarkItDown().convert(input_stream)  # str, path (str or Path), url, requests.Response, BinaryIO
