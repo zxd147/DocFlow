@@ -24,7 +24,7 @@ from weasyprint import HTML
 from app.models.file_conversion import FileConvertParams
 from app.utils.file import raw_to_stream, stream_to_raw, seek_stream, async_save_string_or_bytes_to_path, \
     async_get_bytes_from_path, text_to_binary, gen_resource_locations
-from app.utils.filetypes import markitdown_input_types
+from app.utils.filetypes import markitdown_input_ext
 from app.utils.logger import get_logger
 from app.utils.text import strip_markdown, format_html
 
@@ -151,7 +151,7 @@ async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, byt
         raise ValueError("Only *2md conversions are supported with MarkItDown.")
     extension = convert_type.replace("2md", "").lower()
     # 安全性和鲁棒性检查
-    if extension not in markitdown_input_types:
+    if extension not in markitdown_input_ext:
         raise ValueError(f"Unsupported convert_type: {convert_type}")
     input_stream = raw_to_stream(text_to_binary(params.input_raw))
     result = MarkItDown().convert(input_stream)  # str, path (str or Path), url, requests.Response, BinaryIO
