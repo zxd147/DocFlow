@@ -283,7 +283,11 @@ async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, byt
     return output_raw, output_stream
 
 async def convert_html_to_md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    if "v4" in params.convert_type:
+    if "v5" in params.convert_type:
+        input_stream = raw_to_stream(text_to_binary(params.input_raw))
+        result = MarkItDown().convert(input_stream)  # str, path (str or Path), url, requests.Response, BinaryIO
+        output_raw = result.text_content
+    elif "v4" in params.convert_type:
         output_raw = html2markdown.convert(params.input_raw)
     elif "v3" in params.convert_type:
         output_raw = Tomd(params.input_raw).markdown
