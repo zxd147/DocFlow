@@ -32,7 +32,7 @@ def get_converter(convert_type):
     if "aspose" in convert_type:
         pass
     conversion_map = get_file_conversion()
-    base_convert_type = convert_type.lower().split("_", 1)[0]
+    base_convert_type = convert_type.lower().split("-")[0].split("_")[0]
     converter = conversion_map.get(base_convert_type)
     if converter is None:
         raise ValueError(f"不支持的转换类型: {base_convert_type}")
@@ -54,14 +54,15 @@ async def handle_file_operation(request_model: FileModelRequest, file, mode, con
             return_raw, return_stream = (raw, raw_to_stream(raw)) if request_model.return_stream else (raw, None)
         elif mode == "convert":
             _, save_path = await save_file_and_get_url(request_model.data.file_path, public_dir, raw, request_model.do_save, name, extension)
-            url, path, name, extension = await get_convert_path_and_url(save_path, convert_type)
-            extra.setdefault("is_text", is_text_file(path))
-            params_dict = {"convert_type": convert_type, "input_raw": raw, "input_path": save_path, "output_path": path, "extra": extra}
+            convert_url, convert_path, name, extension = await get_convert_path_and_url(save_path, convert_type)
+            extra.setdefault("is_text", is_text_file(convert_path))
+            params_dict = {"convert_type": convert_type, "input_raw": raw, "input_path": save_path, "output_path": convert_path, "extra": extra}
             params = FileConvertParams.from_dict(params_dict)
             converter = get_converter(convert_type)
-            convert_raw, convert_stream = await converter(params)
-            return_path = await async_save_string_or_bytes_to_path(convert_raw, path)
-            return_url, return_raw, return_stream = url, convert_raw, convert_stream
+            convert_raw, convert_stream, output_save_path = await converter(params)
+            if not output_save_path and request_model.do_save:
+                convert_path = await async_save_string_or_bytes_to_path(convert_raw, convert_path)
+            return_url, return_path, return_raw, return_stream = convert_url, convert_path, convert_raw, convert_stream
         elif mode == "download":
             save_url = request_model.data.file_url
             save_path = request_model.data.file_path
@@ -195,7 +196,7 @@ async def save_file_and_get_url(path, directory, raw, do_save, name, extension):
     return save_url, save_path
 
 async def get_convert_path_and_url(path, convert_type):
-    src_ext, dst_ext = convert_type.lower().split("_", 1)[0].split("2", 1)
+    src_ext, dst_ext = convert_type.lower().split("-")[0].split("_")[0].split("2", 1)
     path_ext = os.path.splitext(path)[1]
     if path_ext != f".{src_ext}":
         raise ValueError(f"文件{path}扩展名与转换类型不匹配: {path_ext} != .{src_ext}")

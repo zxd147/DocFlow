@@ -25,7 +25,7 @@ async def download_file(request: Request, file: Optional[UploadFile] = File(None
 @router.post("/convert_file/{convert_type}")
 async def docx2html(request: Request, convert_type: ConvertType = ConvertType.pdf2docx, file: Optional[UploadFile] = File(None)):
     request = await parse_file_request(request)
-    response = await handle_file_operation(request, file=file, mode="convert", convert_type=convert_type)
+    response = await handle_file_operation(request, file=file, mode="convert", convert_type=convert_type.lower())
     return response
 
 @router.post("/extract_text")

@@ -1,6 +1,7 @@
 import os
 import subprocess
 from io import BytesIO, StringIO
+from pathlib import Path
 from typing import Union
 
 import commonmark
@@ -30,7 +31,7 @@ from app.utils.text import strip_markdown, format_html
 
 logger = get_logger()
 
-async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     output_stream = BytesIO()
     logger.info(f"Converting pdf to docx...")
     cv = Converter(pdf_file=params.input_path, stream=params.input_raw)
@@ -38,9 +39,10 @@ async def convert_pdf_to_docx(params: FileConvertParams) -> tuple[Union[str, byt
     cv.close()
     seek_stream(output_stream)
     output_raw = stream_to_raw(output_stream)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     input_path, input_raw, input_stream = params.input_path, params.input_raw, params.input_stream
     images_dir = os.path.join(gen_resource_locations("publib", "images", params.extra.category)[0], params.extra.name)
     input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
@@ -57,16 +59,26 @@ async def convert_docx_to_md_or_html(params: FileConvertParams) -> tuple[Union[s
     # 格式化处理
     output_raw = await format_html(result_raw, params.extra.policy, images_dir) if "2md" not in params.convert_type else result_raw
     output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_pdf_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
-    _, docx_stream = await convert_pdf_to_docx(params)
+async def convert_pdf_to_md_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
+    docx_ext = "docx"
+    src_ext, dst_ext = params.convert_type.lower().split("-")[0].split("_")[0].split("2", 1)
+    docx_path = str(Path(params.input_path).with_suffix(f".{docx_ext}"))
+    output_path = params.output_path
+    params.convert_type = f"{src_ext}2{docx_ext}"
+    params.output_path = docx_path
+    docx_raw, docx_stream, docx_save_path = await convert_pdf_to_docx(params)
+    params.convert_type = f"{docx_ext}2{dst_ext}"
+    params.input_raw = docx_raw
     params.input_stream = docx_stream
-    params.input_path = ''
-    output_raw, output_stream = await convert_docx_to_md_or_html(params)
-    return output_raw, output_stream
+    params.input_path = docx_path
+    params.output_path = output_path
+    output_raw, output_stream, output_path = await convert_docx_to_md_or_html(params)
+    return output_raw, output_stream, output_path
 
-async def convert_html_to_docx(params: FileConvertParams) -> tuple[bytes, BytesIO]:
+async def convert_html_to_docx(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     input_raw = params.input_raw
     logger.info("Converting html to docx...")
     soup = BeautifulSoup(input_raw, "html.parser")
@@ -74,9 +86,10 @@ async def convert_html_to_docx(params: FileConvertParams) -> tuple[bytes, BytesI
     output_stream = html2docx(input_raw, title)
     seek_stream(output_stream)
     output_raw = stream_to_raw(output_stream)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_docx_to_pdf(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_docx_to_pdf(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     input_path, input_raw, output_path = params.input_path, params.input_raw, params.output_path
     if not os.path.exists(input_path):
         await async_save_string_or_bytes_to_path(input_raw, input_path)
@@ -87,9 +100,9 @@ async def convert_docx_to_pdf(params: FileConvertParams) -> tuple[Union[str, byt
         subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", os.path.dirname(output_path), input_path], check=True)
     output_raw, _ = await async_get_bytes_from_path(output_path)
     output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    return output_raw, output_stream, output_path
 
-async def convert_html_to_pdf(params: FileConvertParams) -> tuple[bytes, BytesIO]:
+async def convert_html_to_pdf(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     input_raw = params.input_raw
     if "v2" in params.convert_type:
         logger.info("Converting HTML to PDF using WeasyPrint...")
@@ -101,9 +114,10 @@ async def convert_html_to_pdf(params: FileConvertParams) -> tuple[bytes, BytesIO
         logger.info("Converting HTML to PDF using Wkhtmltopdf...")
         output_raw = pdfkit.from_string(input_raw, False)
         output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     convert_type, input_raw, input_stream = params.convert_type, params.input_raw, params.input_stream
     input_stream = raw_to_stream(input_raw) if not input_stream else input_stream
     output_stream = StringIO() if params.extra.is_text else BytesIO()
@@ -143,9 +157,10 @@ async def convert_excel_and_markdown_or_html(params: FileConvertParams) -> tuple
         seek_stream(output_stream)
         output_raw = stream_to_raw(output_stream)
     output_stream = raw_to_stream(output_raw) if output_stream.getvalue() == "" else output_stream
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     convert_type = params.convert_type
     if "2md" not in convert_type:
         raise ValueError("Only *2md conversions are supported with MarkItDown.")
@@ -157,9 +172,10 @@ async def convert_to_markdown(params: FileConvertParams) -> tuple[Union[str, byt
     result = MarkItDown().convert(input_stream)  # str, path (str or Path), url, requests.Response, BinaryIO
     output_raw = result.text_content
     output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_html_to_md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_html_to_md(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     if "v5" in params.convert_type:
         input_stream = raw_to_stream(text_to_binary(params.input_raw))
         result = MarkItDown().convert(input_stream)  # str, path (str or Path), url, requests.Response, BinaryIO
@@ -174,9 +190,10 @@ async def convert_html_to_md(params: FileConvertParams) -> tuple[Union[str, byte
     else:
         output_raw = markdownify(params.input_raw)
     output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     if "v5" in params.convert_type:
         parser = commonmark.Parser()
         renderer = commonmark.HtmlRenderer()
@@ -193,26 +210,30 @@ async def convert_md_to_html(params: FileConvertParams) -> tuple[Union[str, byte
     images_dir = os.path.join(gen_resource_locations("publib", "images", params.extra.category)[0], params.extra.name)
     output_raw = await format_html(output_raw, params.extra.policy, images_dir)
     output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_html_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_html_to_html(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     images_dir = os.path.join(gen_resource_locations("publib", "images", params.extra.category)[0], params.extra.name)
     output_raw = await format_html(params.input_raw, params.extra.policy, images_dir)
     output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_md_to_txt(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_md_to_txt(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     # markdown转为纯文本，使用正则表达式清除 Markdown 标记
     output_raw = await strip_markdown(params.input_raw)
     output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
-async def convert_html_to_txt(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO]]:
+async def convert_html_to_txt(params: FileConvertParams) -> tuple[Union[str, bytes], Union[StringIO, BytesIO], str]:
     # html转纯文本, 	用 BeautifulSoup 的 get_text() 方法,彻底清除无标记
     soup = BeautifulSoup(params.input_raw, "html.parser")
     output_raw = soup.get_text(separator="\n")  # type: ignore
     output_stream = raw_to_stream(output_raw)
-    return output_raw, output_stream
+    output_path = ""
+    return output_raw, output_stream, output_path
 
 
 
